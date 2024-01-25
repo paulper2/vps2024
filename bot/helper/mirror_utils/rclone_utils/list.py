@@ -1,27 +1,27 @@
-from asyncio import wait_for, Event, wrap_future, gather
-from aiofiles.os import path as aiopath
 from aiofiles import open as aiopen
+from aiofiles.os import path as aiopath
+from asyncio import wait_for, Event, wrap_future, gather
 from configparser import ConfigParser
-from pyrogram.handlers import CallbackQueryHandler
-from pyrogram.filters import regex, user
 from functools import partial
 from json import loads
+from pyrogram.filters import regex, user
+from pyrogram.handlers import CallbackQueryHandler
 from time import time
 
 from bot import LOGGER, config_dict
-from bot.helper.ext_utils.db_handler import DbManger
-from bot.helper.telegram_helper.button_build import ButtonMaker
-from bot.helper.ext_utils.status_utils import get_readable_file_size, get_readable_time
-from bot.helper.telegram_helper.message_utils import (
-    sendMessage,
-    editMessage,
-    deleteMessage,
-)
 from bot.helper.ext_utils.bot_utils import (
     cmd_exec,
     new_thread,
     new_task,
     update_user_ldata,
+)
+from bot.helper.ext_utils.db_handler import DbManager
+from bot.helper.ext_utils.status_utils import get_readable_file_size, get_readable_time
+from bot.helper.telegram_helper.button_build import ButtonMaker
+from bot.helper.telegram_helper.message_utils import (
+    sendMessage,
+    editMessage,
+    deleteMessage,
 )
 
 LIST_LIMIT = 6
@@ -90,11 +90,11 @@ async def path_updates(_, query, obj):
             if obj.config_path == "rclone.conf"
             else f"mrcc:{obj.remote}{obj.path}"
         )
-        if path != obj.listener.user_dict.get("rclone_path"):
-            update_user_ldata(obj.listener.user_id, "rclone_path", path)
+        if path != obj.listener.userDict.get("rclone_path"):
+            update_user_ldata(obj.listener.userId, "rclone_path", path)
             await obj.get_path_buttons()
             if config_dict["DATABASE_URL"]:
-                await DbManger().update_user_data(obj.listener.user_id)
+                await DbManager().update_user_data(obj.listener.userId)
     elif data[1] == "owner":
         obj.config_path = "rclone.conf"
         obj.path = ""
@@ -122,7 +122,7 @@ class RcloneList:
         self.query_proc = False
         self.item_type = "--dirs-only"
         self.event = Event()
-        self.user_rcc_path = f"rclone/{self.listener.user_id}.conf"
+        self.user_rcc_path = f"rclone/{self.listener.userId}.conf"
         self.config_path = ""
         self.path = ""
         self.list_status = ""
@@ -135,7 +135,7 @@ class RcloneList:
         pfunc = partial(path_updates, obj=self)
         handler = self.listener.client.add_handler(
             CallbackQueryHandler(
-                pfunc, filters=regex("^rcq") & user(self.listener.user_id)
+                pfunc, filters=regex("^rcq") & user(self.listener.userId)
             ),
             group=-1,
         )
@@ -209,7 +209,7 @@ class RcloneList:
             msg += f" | Page: {int(page)}/{pages} | Page Step: {self.page_step}"
         msg += f"\n\nItem Type: {self.item_type}\nConfig Path: {self.config_path}"
         msg += f"\nCurrent Path: <code>{self.remote}{self.path}</code>"
-        msg += f"\nTimeout: {get_readable_time(self._timeout-(time()-self._time))}"
+        msg += f"\nTimeout: {get_readable_time(self._timeout - (time() - self._time))}"
         await self._send_list_message(msg, button)
 
     async def get_path(self, itype=""):
@@ -217,11 +217,23 @@ class RcloneList:
             self.item_type == itype
         elif self.list_status == "rcu":
             self.item_type == "--dirs-only"
-        cmd = ["rclone",  "lsjson", self.item_type, "--fast-list", "--no-mimetype", "--no-modtime", "--config", self.config_path, f"{self.remote}{self.path}"]
+        cmd = [
+            "rclone",
+            "lsjson",
+            self.item_type,
+            "--fast-list",
+            "--no-mimetype",
+            "--no-modtime",
+            "--config",
+            self.config_path,
+            f"{self.remote}{self.path}",
+        ]
         if self.is_cancelled:
             return
         res, err, code = await cmd_exec(cmd)
         if code not in [0, -9]:
+            if not err:
+                err = "Use '/shell cat rlog.txt' to see more information"
             LOGGER.error(
                 f"While rclone listing. Path: {self.remote}{self.path}. Stderr: {err}"
             )
@@ -258,7 +270,9 @@ class RcloneList:
                 else "\nTransfer Type: <i>Upload</i>"
             )
             msg += f"\nConfig Path: {self.config_path}"
-            msg += f"\nTimeout: {get_readable_time(self._timeout-(time()-self._time))}"
+            msg += (
+                f"\nTimeout: {get_readable_time(self._timeout - (time() - self._time))}"
+            )
             buttons = ButtonMaker()
             for remote in self._sections:
                 buttons.ibutton(remote, f"rcq re {remote}:")
@@ -275,7 +289,9 @@ class RcloneList:
                 if self.list_status == "rcd"
                 else "\nTransfer Type: Upload"
             )
-            msg += f"\nTimeout: {get_readable_time(self._timeout-(time()-self._time))}"
+            msg += (
+                f"\nTimeout: {get_readable_time(self._timeout - (time() - self._time))}"
+            )
             buttons = ButtonMaker()
             buttons.ibutton("Owner Config", "rcq owner")
             buttons.ibutton("My Config", "rcq user")

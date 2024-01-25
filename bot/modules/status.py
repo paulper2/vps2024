@@ -1,6 +1,6 @@
-from pyrogram.handlers import MessageHandler, CallbackQueryHandler
-from pyrogram.filters import command, regex
 from psutil import cpu_percent, virtual_memory, disk_usage
+from pyrogram.filters import command, regex
+from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from time import time
 
 from bot import (
@@ -12,21 +12,21 @@ from bot import (
     Intervals,
     bot,
 )
-from bot.helper.telegram_helper.filters import CustomFilters
+from bot.helper.ext_utils.bot_utils import new_task, sync_to_async
+from bot.helper.ext_utils.status_utils import (
+    MirrorStatus,
+    get_readable_file_size,
+    get_readable_time,
+    speed_string_to_bytes,
+)
 from bot.helper.telegram_helper.bot_commands import BotCommands
+from bot.helper.telegram_helper.filters import CustomFilters
 from bot.helper.telegram_helper.message_utils import (
     sendMessage,
     deleteMessage,
     auto_delete_message,
     sendStatusMessage,
     update_status_message,
-)
-from bot.helper.ext_utils.bot_utils import new_task
-from bot.helper.ext_utils.status_utils import (
-    MirrorStatus,
-    get_readable_file_size,
-    get_readable_time,
-    speed_string_to_bytes,
 )
 
 
@@ -37,7 +37,7 @@ async def mirror_status(_, message):
     if count == 0:
         currentTime = get_readable_time(time() - botStartTime)
         free = get_readable_file_size(disk_usage(DOWNLOAD_DIR).free)
-        msg = f"No Active Tasks!\nEach user can get status for his tasks by me or user_id after cmd: /{BotCommands.StatusCommand} me"
+        msg = f"No Active Tasks!\nEach user can get status for his tasks by adding me or user_id after cmd: /{BotCommands.StatusCommand} me"
         msg += (
             f"\n<b>CPU:</b> {cpu_percent()}% | <b>FREE:</b> {free}"
             f"\n<b>RAM:</b> {virtual_memory().percent}% | <b>UPTIME:</b> {currentTime}"
@@ -101,7 +101,7 @@ async def status_pages(_, query):
         seed_speed = 0
         async with task_dict_lock:
             for download in task_dict.values():
-                match download.status():
+                match await sync_to_async(download.status):
                     case MirrorStatus.STATUS_DOWNLOADING:
                         tasks["Download"] += 1
                         dl_speed += speed_string_to_bytes(download.speed())
@@ -129,6 +129,9 @@ async def status_pages(_, query):
                         tasks["Pause"] += 1
                     case MirrorStatus.STATUS_SAMVID:
                         tasks["SamVid"] += 1
+                    case _:
+                        tasks["Download"] += 1
+                        dl_speed += speed_string_to_bytes(download.speed())
 
         msg = f"""DL: {tasks['Download']} | UP: {tasks['Upload']} | SD: {tasks['Seed']} | AR: {tasks['Archive']}
 EX: {tasks['Extract']} | SP: {tasks['Split']} | QD: {tasks['QueueDl']} | QU: {tasks['QueueUp']}
@@ -138,7 +141,7 @@ ODLS: {get_readable_file_size(dl_speed)}/s
 OULS: {get_readable_file_size(up_speed)}/s
 OSDS: {get_readable_file_size(seed_speed)}/s
 """
-        await query.answer(msg, show_alert=True, cache_time=30)
+        await query.answer(msg, show_alert=True)
 
 
 bot.add_handler(

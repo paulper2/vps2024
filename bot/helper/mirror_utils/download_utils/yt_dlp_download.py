@@ -1,15 +1,15 @@
-from os import path as ospath, listdir
-from secrets import token_urlsafe
 from logging import getLogger
-from yt_dlp import YoutubeDL, DownloadError
+from os import path as ospath, listdir
 from re import search as re_search
+from secrets import token_urlsafe
+from yt_dlp import YoutubeDL, DownloadError
 
 from bot import task_dict_lock, task_dict, non_queued_dl, queue_dict_lock
+from bot.helper.ext_utils.bot_utils import sync_to_async, async_to_sync
+from bot.helper.ext_utils.task_manager import check_running_tasks, stop_duplicate_check
+from bot.helper.mirror_utils.status_utils.queue_status import QueueStatus
 from bot.helper.telegram_helper.message_utils import sendStatusMessage
 from ..status_utils.yt_dlp_download_status import YtDlpDownloadStatus
-from bot.helper.mirror_utils.status_utils.queue_status import QueueStatus
-from bot.helper.ext_utils.bot_utils import sync_to_async, async_to_sync
-from bot.helper.ext_utils.task_manager import is_queued, stop_duplicate_check
 
 LOGGER = getLogger(__name__)
 
@@ -43,7 +43,6 @@ class MyLogger:
 class YoutubeDLHelper:
     def __init__(self, listener):
         self._last_downloaded = 0
-        self._size = 0
         self._progress = 0
         self._downloaded_bytes = 0
         self._download_speed = 0
@@ -84,7 +83,7 @@ class YoutubeDLHelper:
 
     @property
     def size(self):
-        return self._size
+        return self._listener.size
 
     @property
     def progress(self):
@@ -110,13 +109,13 @@ class YoutubeDLHelper:
                 self._downloaded_bytes += chunk_size
             else:
                 if d.get("total_bytes"):
-                    self._size = d["total_bytes"]
+                    self._listener.size = d["total_bytes"]
                 elif d.get("total_bytes_estimate"):
-                    self._size = d["total_bytes_estimate"]
+                    self._listener.size = d["total_bytes_estimate"]
                 self._downloaded_bytes = d["downloaded_bytes"]
                 self._eta = d.get("eta", "-") or "-"
             try:
-                self._progress = (self._downloaded_bytes / self._size) * 100
+                self._progress = (self._downloaded_bytes / self._listener.size) * 100
             except:
                 pass
 
@@ -149,9 +148,9 @@ class YoutubeDLHelper:
                     if not entry:
                         continue
                     elif "filesize_approx" in entry:
-                        self._size += entry["filesize_approx"]
+                        self._listener.size += entry["filesize_approx"]
                     elif "filesize" in entry:
-                        self._size += entry["filesize"]
+                        self._listener.size += entry["filesize"]
                     if not self._listener.name:
                         outtmpl_ = "%(series,playlist_title,channel)s%(season_number& |)s%(season_number&S|)s%(season_number|)02d.%(ext)s"
                         self._listener.name, ext = ospath.splitext(
@@ -312,20 +311,24 @@ class YoutubeDLHelper:
             await self._listener.onDownloadError(msg, button)
             return
 
-        add_to_queue, event = await is_queued(self._listener.mid)
-        if add_to_queue:
-            LOGGER.info(f"Added to Queue/Download: {self._listener.name}")
-            async with task_dict_lock:
-                task_dict[self._listener.mid] = QueueStatus(
-                    self._listener, self._size, self._gid, "dl"
-                )
-            await event.wait()
-            async with task_dict_lock:
-                if self._listener.mid not in task_dict:
-                    return
-            LOGGER.info(f"Start Queued Download from YT_DLP: {self._listener.name}")
-            await self._onDownloadStart(True)
+        if not (self._listener.forceRun or self._listener.forceDownload):
+            add_to_queue, event = await check_running_tasks(self._listener.mid)
+            if add_to_queue:
+                LOGGER.info(f"Added to Queue/Download: {self._listener.name}")
+                async with task_dict_lock:
+                    task_dict[self._listener.mid] = QueueStatus(
+                        self._listener, self._gid, "dl"
+                    )
+                await event.wait()
+                async with task_dict_lock:
+                    if self._listener.mid not in task_dict:
+                        return
+                LOGGER.info(f"Start Queued Download from YT_DLP: {self._listener.name}")
+                await self._onDownloadStart(True)
         else:
+            add_to_queue = False
+
+        if not add_to_queue:
             LOGGER.info(f"Download with YT_DLP: {self._listener.name}")
 
         async with queue_dict_lock:

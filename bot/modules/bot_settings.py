@@ -1,29 +1,15 @@
-from pyrogram.handlers import MessageHandler, CallbackQueryHandler
-from pyrogram.filters import command, regex, create
-from functools import partial
-from asyncio import create_subprocess_exec, create_subprocess_shell, sleep, gather
-from aiofiles.os import remove, rename, path as aiopath
 from aiofiles import open as aiopen
-from os import environ, getcwd
-from dotenv import load_dotenv
-from time import time
-from io import BytesIO
+from aiofiles.os import remove, rename, path as aiopath
 from aioshutil import rmtree
+from asyncio import create_subprocess_exec, create_subprocess_shell, sleep, gather
+from dotenv import load_dotenv
+from functools import partial
+from io import BytesIO
+from os import environ, getcwd
+from pyrogram.filters import command, regex, create
+from pyrogram.handlers import MessageHandler, CallbackQueryHandler
+from time import time
 
-from bot.helper.telegram_helper.filters import CustomFilters
-from bot.helper.telegram_helper.bot_commands import BotCommands
-from bot.helper.telegram_helper.button_build import ButtonMaker
-from bot.helper.ext_utils.bot_utils import (
-    setInterval,
-    sync_to_async,
-    new_thread,
-)
-from bot.helper.ext_utils.db_handler import DbManger
-from bot.helper.ext_utils.task_manager import start_from_queued
-from bot.helper.ext_utils.jdownloader_booter import jdownloader
-from bot.helper.mirror_utils.rclone_utils.serve import rclone_serve_booter
-from bot.modules.torrent_search import initiate_search_tools
-from bot.modules.rss import addJob
 from bot import (
     config_dict,
     user_data,
@@ -44,6 +30,18 @@ from bot import (
     LOGGER,
     bot,
 )
+from bot.helper.ext_utils.bot_utils import (
+    setInterval,
+    sync_to_async,
+    new_thread,
+)
+from bot.helper.ext_utils.db_handler import DbManager
+from bot.helper.ext_utils.jdownloader_booter import jdownloader
+from bot.helper.ext_utils.task_manager import start_from_queued
+from bot.helper.mirror_utils.rclone_utils.serve import rclone_serve_booter
+from bot.helper.telegram_helper.bot_commands import BotCommands
+from bot.helper.telegram_helper.button_build import ButtonMaker
+from bot.helper.telegram_helper.filters import CustomFilters
 from bot.helper.telegram_helper.message_utils import (
     sendMessage,
     sendFile,
@@ -51,16 +49,17 @@ from bot.helper.telegram_helper.message_utils import (
     update_status_message,
     deleteMessage,
 )
+from bot.modules.rss import addJob
+from bot.modules.torrent_search import initiate_search_tools
 
 START = 0
 STATE = "view"
 handler_dict = {}
 default_values = {
-    "AUTO_DELETE_MESSAGE_DURATION": 30,
     "DOWNLOAD_DIR": "/usr/src/app/downloads/",
     "LEECH_SPLIT_SIZE": MAX_SPLIT_SIZE,
     "RSS_DELAY": 600,
-    "STATUS_UPDATE_INTERVAL": 10,
+    "STATUS_UPDATE_INTERVAL": 15,
     "SEARCH_LIMIT": 0,
     "UPSTREAM_BRANCH": "master",
     "DEFAULT_UPLOAD": "gd",
@@ -125,9 +124,9 @@ async def get_buttons(key=None, edit_type=None):
         buttons.ibutton("Close", "botset close")
         for x in range(0, len(config_dict), 10):
             buttons.ibutton(
-                f"{int(x/10)}", f"botset start var {x}", position="footer"
+                f"{int(x / 10)}", f"botset start var {x}", position="footer"
             )
-        msg = f"Config Variables | Page: {int(START/10)} | State: {STATE}"
+        msg = f"Config Variables | Page: {int(START / 10)} | State: {STATE}"
     elif key == "private":
         buttons.ibutton("Back", "botset back")
         buttons.ibutton("Close", "botset close")
@@ -147,9 +146,9 @@ Timeout: 60 sec"""
         buttons.ibutton("Close", "botset close")
         for x in range(0, len(aria2_options), 10):
             buttons.ibutton(
-                f"{int(x/10)}", f"botset start aria {x}", position="footer"
+                f"{int(x / 10)}", f"botset start aria {x}", position="footer"
             )
-        msg = f"Aria2c Options | Page: {int(START/10)} | State: {STATE}"
+        msg = f"Aria2c Options | Page: {int(START / 10)} | State: {STATE}"
     elif key == "qbit":
         for k in list(qbit_options.keys())[START : 10 + START]:
             buttons.ibutton(k, f"botset qbitvar {k}")
@@ -161,9 +160,9 @@ Timeout: 60 sec"""
         buttons.ibutton("Close", "botset close")
         for x in range(0, len(qbit_options), 10):
             buttons.ibutton(
-                f"{int(x/10)}", f"botset start qbit {x}", position="footer"
+                f"{int(x / 10)}", f"botset start qbit {x}", position="footer"
             )
-        msg = f"Qbittorrent Options | Page: {int(START/10)} | State: {STATE}"
+        msg = f"Qbittorrent Options | Page: {int(START / 10)} | State: {STATE}"
     button = buttons.build_menu(1) if key is None else buttons.build_menu(2)
     return msg, button
 
@@ -181,10 +180,7 @@ async def edit_variable(_, message, pre_message, key):
     elif value.lower() == "false":
         value = False
         if key == "INCOMPLETE_TASK_NOTIFIER" and DATABASE_URL:
-            await DbManger().trunc_table("tasks")
-    elif key == "RSS_DELAY":
-        value = int(value)
-        addJob(value)
+            await DbManager().trunc_table("tasks")
     elif key == "DOWNLOAD_DIR":
         if not value.endswith("/"):
             value += "/"
@@ -245,7 +241,7 @@ async def edit_variable(_, message, pre_message, key):
     await update_buttons(pre_message, "var")
     await deleteMessage(message)
     if DATABASE_URL:
-        await DbManger().update_config({key: value})
+        await DbManager().update_config({key: value})
     if key in ["SEARCH_PLUGINS", "SEARCH_API_LINK"]:
         await initiate_search_tools()
     elif key in ["QUEUE_ALL", "QUEUE_DOWNLOAD", "QUEUE_UPLOAD"]:
@@ -259,6 +255,8 @@ async def edit_variable(_, message, pre_message, key):
         await rclone_serve_booter()
     elif key in ["JD_EMAIL", "JD_PASS"]:
         jdownloader.initiate()
+    elif key == "RSS_DELAY":
+        addJob()
 
 
 async def edit_aria(_, message, pre_message, key):
@@ -286,7 +284,7 @@ async def edit_aria(_, message, pre_message, key):
     await update_buttons(pre_message, "aria")
     await deleteMessage(message)
     if DATABASE_URL:
-        await DbManger().update_aria2(key, value)
+        await DbManager().update_aria2(key, value)
 
 
 async def edit_qbit(_, message, pre_message, key):
@@ -305,7 +303,7 @@ async def edit_qbit(_, message, pre_message, key):
     await update_buttons(pre_message, "qbit")
     await deleteMessage(message)
     if DATABASE_URL:
-        await DbManger().update_qbittorrent(key, value)
+        await DbManager().update_qbittorrent(key, value)
 
 
 async def sync_jdownloader():
@@ -313,10 +311,11 @@ async def sync_jdownloader():
         await sync_to_async(jdownloader.device.system.exit_jd)
         if await aiopath.exists("cfg.zip"):
             await remove("cfg.zip")
+        await sleep(5)
         await (
             await create_subprocess_exec("7z", "a", "cfg.zip", "/JDownloader/cfg")
         ).wait()
-        await DbManger().update_private_file("cfg.zip")
+        await DbManager().update_private_file("cfg.zip")
         await sync_to_async(jdownloader.connectToDevice)
 
 
@@ -333,7 +332,7 @@ async def update_private_file(_, message, pre_message):
                 await rmtree("rclone_sa")
             config_dict["USE_SERVICE_ACCOUNTS"] = False
             if DATABASE_URL:
-                await DbManger().update_config({"USE_SERVICE_ACCOUNTS": False})
+                await DbManager().update_config({"USE_SERVICE_ACCOUNTS": False})
         elif file_name in [".netrc", "netrc"]:
             await (await create_subprocess_exec("touch", ".netrc")).wait()
             await (await create_subprocess_exec("chmod", "600", ".netrc")).wait()
@@ -394,7 +393,7 @@ async def update_private_file(_, message, pre_message):
         await rclone_serve_booter()
     await update_buttons(pre_message)
     if DATABASE_URL:
-        await DbManger().update_private_file(file_name)
+        await DbManager().update_private_file(file_name)
     if await aiopath.exists("accounts.zip"):
         await remove("accounts.zip")
 
@@ -483,7 +482,7 @@ async def edit_bot_settings(client, query):
                         LOGGER.error(e)
             aria2_options["bt-stop-timeout"] = "0"
             if DATABASE_URL:
-                await DbManger().update_aria2("bt-stop-timeout", "0")
+                await DbManager().update_aria2("bt-stop-timeout", "0")
         elif data[2] == "BASE_URL":
             await (await create_subprocess_exec("pkill", "-9", "-f", "gunicorn")).wait()
         elif data[2] == "BASE_URL_PORT":
@@ -504,13 +503,13 @@ async def edit_bot_settings(client, query):
             if DRIVES_NAMES and DRIVES_NAMES[0] == "Main":
                 INDEX_URLS[0] = ""
         elif data[2] == "INCOMPLETE_TASK_NOTIFIER" and DATABASE_URL:
-            await DbManger().trunc_table("tasks")
+            await DbManager().trunc_table("tasks")
         elif data[2] in ["JD_EMAIL", "JD_PASS"]:
             jdownloader.device = None
         config_dict[data[2]] = value
         await update_buttons(message, "var")
         if DATABASE_URL:
-            await DbManger().update_config({data[2]: value})
+            await DbManager().update_config({data[2]: value})
         if data[2] in ["SEARCH_PLUGINS", "SEARCH_API_LINK"]:
             await initiate_search_tools()
         elif data[2] in ["QUEUE_ALL", "QUEUE_DOWNLOAD", "QUEUE_UPLOAD"]:
@@ -541,7 +540,7 @@ async def edit_bot_settings(client, query):
                 except Exception as e:
                     LOGGER.error(e)
         if DATABASE_URL:
-            await DbManger().update_aria2(data[2], value)
+            await DbManager().update_aria2(data[2], value)
     elif data[1] == "emptyaria":
         await query.answer()
         aria2_options[data[2]] = ""
@@ -556,14 +555,14 @@ async def edit_bot_settings(client, query):
                 except Exception as e:
                     LOGGER.error(e)
         if DATABASE_URL:
-            await DbManger().update_aria2(data[2], "")
+            await DbManager().update_aria2(data[2], "")
     elif data[1] == "emptyqbit":
         await query.answer()
         await sync_to_async(get_client().app_set_preferences, {data[2]: value})
         qbit_options[data[2]] = ""
         await update_buttons(message, "qbit")
         if DATABASE_URL:
-            await DbManger().update_qbittorrent(data[2], "")
+            await DbManager().update_qbittorrent(data[2], "")
     elif data[1] == "private":
         await query.answer()
         await update_buttons(message, data[1])
@@ -770,7 +769,7 @@ async def load_config():
 
     STATUS_UPDATE_INTERVAL = environ.get("STATUS_UPDATE_INTERVAL", "")
     if len(STATUS_UPDATE_INTERVAL) == 0:
-        STATUS_UPDATE_INTERVAL = 10
+        STATUS_UPDATE_INTERVAL = 15
     else:
         STATUS_UPDATE_INTERVAL = int(STATUS_UPDATE_INTERVAL)
     if len(task_dict) != 0 and (st := Intervals["status"]):
@@ -779,12 +778,6 @@ async def load_config():
             Intervals["status"][key] = setInterval(
                 STATUS_UPDATE_INTERVAL, update_status_message, key
             )
-
-    AUTO_DELETE_MESSAGE_DURATION = environ.get("AUTO_DELETE_MESSAGE_DURATION", "")
-    if len(AUTO_DELETE_MESSAGE_DURATION) == 0:
-        AUTO_DELETE_MESSAGE_DURATION = 30
-    else:
-        AUTO_DELETE_MESSAGE_DURATION = int(AUTO_DELETE_MESSAGE_DURATION)
 
     YT_DLP_OPTIONS = environ.get("YT_DLP_OPTIONS", "")
     if len(YT_DLP_OPTIONS) == 0:
@@ -828,7 +821,7 @@ async def load_config():
                     LOGGER.error(e)
         aria2_options["bt-stop-timeout"] = "0"
         if DATABASE_URL:
-            await DbManger().update_aria2("bt-stop-timeout", "0")
+            await DbManager().update_aria2("bt-stop-timeout", "0")
         TORRENT_TIMEOUT = ""
     else:
         for download in downloads:
@@ -843,7 +836,7 @@ async def load_config():
                     LOGGER.error(e)
         aria2_options["bt-stop-timeout"] = TORRENT_TIMEOUT
         if DATABASE_URL:
-            await DbManger().update_aria2("bt-stop-timeout", TORRENT_TIMEOUT)
+            await DbManager().update_aria2("bt-stop-timeout", TORRENT_TIMEOUT)
         TORRENT_TIMEOUT = int(TORRENT_TIMEOUT)
 
     QUEUE_ALL = environ.get("QUEUE_ALL", "")
@@ -858,7 +851,7 @@ async def load_config():
     INCOMPLETE_TASK_NOTIFIER = environ.get("INCOMPLETE_TASK_NOTIFIER", "")
     INCOMPLETE_TASK_NOTIFIER = INCOMPLETE_TASK_NOTIFIER.lower() == "true"
     if not INCOMPLETE_TASK_NOTIFIER and DATABASE_URL:
-        await DbManger().trunc_table("tasks")
+        await DbManager().trunc_table("tasks")
 
     STOP_DUPLICATE = environ.get("STOP_DUPLICATE", "")
     STOP_DUPLICATE = STOP_DUPLICATE.lower() == "true"
@@ -944,7 +937,6 @@ async def load_config():
         {
             "AS_DOCUMENT": AS_DOCUMENT,
             "AUTHORIZED_CHATS": AUTHORIZED_CHATS,
-            "AUTO_DELETE_MESSAGE_DURATION": AUTO_DELETE_MESSAGE_DURATION,
             "BASE_URL": BASE_URL,
             "BASE_URL_PORT": BASE_URL_PORT,
             "BOT_TOKEN": BOT_TOKEN,
@@ -999,8 +991,9 @@ async def load_config():
     )
 
     if DATABASE_URL:
-        await DbManger().update_config(config_dict)
+        await DbManager().update_config(config_dict)
     await gather(initiate_search_tools(), start_from_queued(), rclone_serve_booter())
+    addJob()
 
 
 bot.add_handler(

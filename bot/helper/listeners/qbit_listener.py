@@ -1,13 +1,7 @@
+from aiofiles.os import remove, path as aiopath
 from asyncio import sleep, gather
 from time import time
-from aiofiles.os import remove, path as aiopath
 
-from bot.helper.mirror_utils.status_utils.qbit_status import QbittorrentStatus
-from bot.helper.telegram_helper.message_utils import update_status_message
-from bot.helper.ext_utils.bot_utils import new_task, sync_to_async
-from bot.helper.ext_utils.status_utils import get_readable_time, getTaskByGid
-from bot.helper.ext_utils.files_utils import clean_unwanted
-from bot.helper.ext_utils.task_manager import stop_duplicate_check
 from bot import (
     task_dict,
     task_dict_lock,
@@ -19,6 +13,12 @@ from bot import (
     LOGGER,
     bot_loop,
 )
+from bot.helper.ext_utils.bot_utils import new_task, sync_to_async
+from bot.helper.ext_utils.files_utils import clean_unwanted
+from bot.helper.ext_utils.status_utils import get_readable_time, getTaskByGid
+from bot.helper.ext_utils.task_manager import stop_duplicate_check
+from bot.helper.mirror_utils.status_utils.qbit_status import QbittorrentStatus
+from bot.helper.telegram_helper.message_utils import update_status_message
 
 
 async def _remove_torrent(client, hash_, tag):

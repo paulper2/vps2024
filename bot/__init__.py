@@ -1,16 +1,7 @@
-from tzlocal import get_localzone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from pyrogram import Client as tgClient, enums
-from pymongo import MongoClient
+from aria2p import API as ariaAPI, Client as ariaClient
 from asyncio import Lock
 from dotenv import load_dotenv, dotenv_values
-from time import time
-from subprocess import Popen, run
-from os import remove, path as ospath, environ, getcwd
-from aria2p import API as ariaAPI, Client as ariaClient
-from qbittorrentapi import Client as qbClient
-from socket import setdefaulttimeout
-from uvloop import install
 from logging import (
     getLogger,
     FileHandler,
@@ -22,6 +13,15 @@ from logging import (
     warning as log_warning,
     ERROR,
 )
+from os import remove, path as ospath, environ, getcwd
+from pymongo import MongoClient
+from pyrogram import Client as tgClient, enums
+from qbittorrentapi import Client as qbClient
+from socket import setdefaulttimeout
+from subprocess import Popen, run
+from time import time
+from tzlocal import get_localzone
+from uvloop import install
 
 # from faulthandler import enable as faulthandler_enable
 # faulthandler_enable()
@@ -259,15 +259,9 @@ else:
 
 STATUS_UPDATE_INTERVAL = environ.get("STATUS_UPDATE_INTERVAL", "")
 if len(STATUS_UPDATE_INTERVAL) == 0:
-    STATUS_UPDATE_INTERVAL = 10
+    STATUS_UPDATE_INTERVAL = 15
 else:
     STATUS_UPDATE_INTERVAL = int(STATUS_UPDATE_INTERVAL)
-
-AUTO_DELETE_MESSAGE_DURATION = environ.get("AUTO_DELETE_MESSAGE_DURATION", "")
-if len(AUTO_DELETE_MESSAGE_DURATION) == 0:
-    AUTO_DELETE_MESSAGE_DURATION = 30
-else:
-    AUTO_DELETE_MESSAGE_DURATION = int(AUTO_DELETE_MESSAGE_DURATION)
 
 YT_DLP_OPTIONS = environ.get("YT_DLP_OPTIONS", "")
 if len(YT_DLP_OPTIONS) == 0:
@@ -367,7 +361,6 @@ if len(RCLONE_SERVE_PASS) == 0:
 config_dict = {
     "AS_DOCUMENT": AS_DOCUMENT,
     "AUTHORIZED_CHATS": AUTHORIZED_CHATS,
-    "AUTO_DELETE_MESSAGE_DURATION": AUTO_DELETE_MESSAGE_DURATION,
     "BASE_URL": BASE_URL,
     "BASE_URL_PORT": BASE_URL_PORT,
     "BOT_TOKEN": BOT_TOKEN,

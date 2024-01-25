@@ -1,10 +1,6 @@
-from time import time
 from asyncio import Lock
+from time import time
 
-from bot.helper.mirror_utils.status_utils.telegram_status import TelegramStatus
-from bot.helper.mirror_utils.status_utils.queue_status import QueueStatus
-from bot.helper.telegram_helper.message_utils import sendStatusMessage
-from bot.helper.ext_utils.task_manager import is_queued, stop_duplicate_check
 from bot import (
     LOGGER,
     task_dict,
@@ -14,6 +10,10 @@ from bot import (
     bot,
     user,
 )
+from bot.helper.ext_utils.task_manager import check_running_tasks, stop_duplicate_check
+from bot.helper.mirror_utils.status_utils.queue_status import QueueStatus
+from bot.helper.mirror_utils.status_utils.telegram_status import TelegramStatus
+from bot.helper.telegram_helper.message_utils import sendStatusMessage
 
 global_lock = Lock()
 GLOBAL_GID = set()
@@ -35,13 +35,13 @@ class TelegramDownloadHelper:
     def processed_bytes(self):
         return self._processed_bytes
 
-    async def _onDownloadStart(self, size, file_id, from_queue):
+    async def _onDownloadStart(self, file_id, from_queue):
         async with global_lock:
             GLOBAL_GID.add(file_id)
         self._id = file_id
         async with task_dict_lock:
             task_dict[self._listener.mid] = TelegramStatus(
-                self._listener, self, size, file_id[:12], "dl"
+                self._listener, self, file_id[:12], "dl"
             )
         async with queue_dict_lock:
             non_queued_dl.add(self._listener.mid)
@@ -126,7 +126,7 @@ class TelegramDownloadHelper:
                     )
                 else:
                     path = path + self._listener.name
-                size = media.file_size
+                self._listener.size = media.file_size
                 gid = media.file_unique_id
 
                 msg, button = await stop_duplicate_check(self._listener)
@@ -134,24 +134,24 @@ class TelegramDownloadHelper:
                     await self._listener.onDownloadError(msg, button)
                     return
 
-                add_to_queue, event = await is_queued(self._listener.mid)
-                if add_to_queue:
-                    LOGGER.info(f"Added to Queue/Download: {self._listener.name}")
-                    async with task_dict_lock:
-                        task_dict[self._listener.mid] = QueueStatus(
-                            self._listener, size, gid, "dl"
-                        )
-                    await self._listener.onDownloadStart()
-                    if self._listener.multi <= 1:
-                        await sendStatusMessage(self._listener.message)
-                    await event.wait()
-                    async with task_dict_lock:
-                        if self._listener.mid not in task_dict:
-                            return
-                    from_queue = True
+                if not (self._listener.forceRun or self._listener.forceDownload):
+                    add_to_queue, event = await check_running_tasks(self._listener.mid)
+                    if add_to_queue:
+                        LOGGER.info(f"Added to Queue/Download: {self._listener.name}")
+                        async with task_dict_lock:
+                            task_dict[self._listener.mid] = QueueStatus(
+                                self._listener, gid, "dl"
+                            )
+                        await self._listener.onDownloadStart()
+                        if self._listener.multi <= 1:
+                            await sendStatusMessage(self._listener.message)
+                        await event.wait()
+                        async with task_dict_lock:
+                            if self._listener.mid not in task_dict:
+                                return
                 else:
-                    from_queue = False
-                await self._onDownloadStart(size, gid, from_queue)
+                    add_to_queue = False
+                await self._onDownloadStart(gid, add_to_queue)
                 await self._download(message, path)
             else:
                 await self._onDownloadError("File already being downloaded!")

@@ -1,17 +1,17 @@
+from aiofiles.os import remove, path as aiopath
 from asyncio import sleep
 from time import time
-from aiofiles.os import remove, path as aiopath
 
 from bot import aria2, task_dict_lock, task_dict, LOGGER, config_dict
-from bot.helper.mirror_utils.status_utils.aria2_status import Aria2Status
-from bot.helper.ext_utils.files_utils import clean_unwanted
-from bot.helper.ext_utils.status_utils import getTaskByGid
-from bot.helper.ext_utils.task_manager import stop_duplicate_check
 from bot.helper.ext_utils.bot_utils import (
     new_thread,
     bt_selection_buttons,
     sync_to_async,
 )
+from bot.helper.ext_utils.files_utils import clean_unwanted
+from bot.helper.ext_utils.status_utils import getTaskByGid
+from bot.helper.ext_utils.task_manager import stop_duplicate_check
+from bot.helper.mirror_utils.status_utils.aria2_status import Aria2Status
 from bot.helper.telegram_helper.message_utils import (
     sendMessage,
     deleteMessage,
@@ -28,6 +28,7 @@ async def _onDownloadStarted(api, gid):
         LOGGER.info(f"onDownloadStarted: {gid} METADATA")
         await sleep(1)
         if task := await getTaskByGid(gid):
+            task.listener.isTorrent = True
             if task.listener.select:
                 metamsg = "Downloading Metadata, wait then you can select files. Use torrent file to avoid this wait."
                 meta = await sendMessage(task.listener.message, metamsg)
@@ -66,6 +67,7 @@ async def _onDownloadComplete(api, gid):
         new_gid = download.followed_by_ids[0]
         LOGGER.info(f"Gid changed from {gid} to {new_gid}")
         if task := await getTaskByGid(new_gid):
+            task.listener.isTorrent = True
             if config_dict["BASE_URL"] and task.listener.select:
                 if not task.queued:
                     await sync_to_async(api.client.force_pause, new_gid)
@@ -74,6 +76,7 @@ async def _onDownloadComplete(api, gid):
                 await sendMessage(task.listener.message, msg, SBUTTONS)
     elif download.is_torrent:
         if task := await getTaskByGid(gid):
+            task.listener.isTorrent = True
             if hasattr(task, "seeding") and task.seeding:
                 LOGGER.info(f"Cancelling Seed: {download.name} onDownloadComplete")
                 await task.listener.onUploadError(
@@ -96,6 +99,7 @@ async def _onBtDownloadComplete(api, gid):
         return
     LOGGER.info(f"onBtDownloadComplete: {download.name} - Gid: {gid}")
     if task := await getTaskByGid(gid):
+        task.listener.isTorrent = True
         if task.listener.select:
             res = download.files
             for file_o in res:
@@ -147,7 +151,7 @@ async def _onBtDownloadComplete(api, gid):
 
 @new_thread
 async def _onDownloadStopped(api, gid):
-    await sleep(6)
+    await sleep(4)
     if task := await getTaskByGid(gid):
         await task.listener.onDownloadError("Dead torrent!")
 

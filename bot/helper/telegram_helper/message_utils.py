@@ -1,12 +1,12 @@
 from asyncio import sleep
 from pyrogram.errors import FloodWait
-from time import time
 from re import match as re_match
+from time import time
 
 from bot import config_dict, LOGGER, status_dict, task_dict_lock, Intervals, bot, user
 from bot.helper.ext_utils.bot_utils import setInterval, sync_to_async
-from bot.helper.ext_utils.status_utils import get_readable_message
 from bot.helper.ext_utils.exceptions import TgLinkException
+from bot.helper.ext_utils.status_utils import get_readable_message
 
 
 async def sendMessage(message, text, buttons=None, block=True):
@@ -92,12 +92,11 @@ async def deleteMessage(message):
 
 
 async def auto_delete_message(cmd_message=None, bot_message=None):
-    if config_dict["AUTO_DELETE_MESSAGE_DURATION"] != -1:
-        await sleep(config_dict["AUTO_DELETE_MESSAGE_DURATION"])
-        if cmd_message is not None:
-            await deleteMessage(cmd_message)
-        if bot_message is not None:
-            await deleteMessage(bot_message)
+    await sleep(60)
+    if cmd_message is not None:
+        await deleteMessage(cmd_message)
+    if bot_message is not None:
+        await deleteMessage(bot_message)
 
 
 async def delete_status():

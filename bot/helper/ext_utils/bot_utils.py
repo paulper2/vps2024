@@ -1,6 +1,3 @@
-from asyncio.subprocess import PIPE
-from functools import partial, wraps
-from concurrent.futures import ThreadPoolExecutor
 from aiohttp import ClientSession
 from asyncio import (
     create_subprocess_exec,
@@ -8,11 +5,14 @@ from asyncio import (
     run_coroutine_threadsafe,
     sleep,
 )
+from asyncio.subprocess import PIPE
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial, wraps
 
 from bot import user_data, config_dict, bot_loop
 from bot.helper.ext_utils.help_messages import YT_HELP_DICT, MIRROR_HELP_DICT
-from bot.helper.telegram_helper.button_build import ButtonMaker
 from bot.helper.ext_utils.telegraph_helper import telegraph
+from bot.helper.telegram_helper.button_build import ButtonMaker
 
 THREADPOOL = ThreadPoolExecutor(max_workers=1000)
 
@@ -38,12 +38,12 @@ def create_help_buttons():
     buttons = ButtonMaker()
     for name in list(MIRROR_HELP_DICT.keys())[1:]:
         buttons.ibutton(name, f"help m {name}")
-    buttons.ibutton("Close", f"help close")
+    buttons.ibutton("Close", "help close")
     COMMAND_USAGE["mirror"] = [MIRROR_HELP_DICT["main"], buttons.build_menu(3)]
     buttons.reset()
     for name in list(YT_HELP_DICT.keys())[1:]:
         buttons.ibutton(name, f"help yt {name}")
-    buttons.ibutton("Close", f"help close")
+    buttons.ibutton("Close", "help close")
     COMMAND_USAGE["yt"] = [YT_HELP_DICT["main"], buttons.build_menu(3)]
 
 
@@ -83,7 +83,20 @@ async def get_telegraph_list(telegraph_content):
 def arg_parser(items, arg_base):
     if not items:
         return arg_base
-    bool_arg_set = {"-b", "-e", "-z", "-s", "-j", "-d", "-sv", "-ss"}
+    bool_arg_set = {
+        "-b",
+        "-e",
+        "-z",
+        "-s",
+        "-j",
+        "-d",
+        "-sv",
+        "-ss",
+        "-f",
+        "-fd",
+        "-fu",
+        "-sync",
+    }
     t = len(items)
     i = 0
     arg_start = -1
@@ -93,7 +106,11 @@ def arg_parser(items, arg_base):
         if part in arg_base:
             if arg_start == -1:
                 arg_start = i
-            if i + 1 == t and part in bool_arg_set or part in ["-s", "-j"]:
+            if (
+                i + 1 == t
+                and part in bool_arg_set
+                or part in ["-s", "-j", "-f", "-fd", "-fu", "-sync"]
+            ):
                 arg_base[part] = True
             else:
                 sub_list = []
@@ -119,10 +136,23 @@ def arg_parser(items, arg_base):
     return arg_base
 
 
+def getSizeBytes(size):
+    size = size.lower()
+    if size.endswith("mb"):
+        size = size.split("mb")[0]
+        size = int(float(size) * 1048576)
+    elif size.endswith("gb"):
+        size = size.split("gb")[0]
+        size = int(float(size) * 1073741824)
+    else:
+        size = 0
+    return size
+
+
 async def get_content_type(url):
     try:
-        async with ClientSession(trust_env=True) as session:
-            async with session.get(url, verify_ssl=False) as response:
+        async with ClientSession() as session:
+            async with session.get(url, allow_redirects=True, ssl=False) as response:
                 return response.headers.get("Content-Type")
     except:
         return None
@@ -137,7 +167,7 @@ async def retry_function(func, *args, **kwargs):
     try:
         return await sync_to_async(func, *args, **kwargs)
     except:
-        await sleep(0.5)
+        await sleep(0.3)
         return await retry_function(func, *args, **kwargs)
 
 

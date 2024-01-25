@@ -1,7 +1,7 @@
-from logging import getLogger
-from os import path as ospath, listdir, remove
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
+from logging import getLogger
+from os import path as ospath, listdir, remove
 from tenacity import (
     retry,
     wait_exponential,
@@ -11,8 +11,8 @@ from tenacity import (
 )
 
 from bot import config_dict
-from bot.helper.ext_utils.files_utils import get_mime_type
 from bot.helper.ext_utils.bot_utils import async_to_sync, setInterval
+from bot.helper.ext_utils.files_utils import get_mime_type
 from bot.helper.mirror_utils.gdrive_utils.helper import GoogleDriveHelper
 
 LOGGER = getLogger(__name__)
@@ -29,7 +29,7 @@ class gdUpload(GoogleDriveHelper):
 
     def user_setting(self):
         if self.listener.upDest.startswith("mtp:"):
-            self.token_path = f"tokens/{self.listener.user_id}.pickle"
+            self.token_path = f"tokens/{self.listener.userId}.pickle"
             self.listener.upDest = self.listener.upDest.replace("mtp:", "", 1)
             self.use_sa = False
         elif self.listener.upDest.startswith("tp:"):
@@ -39,14 +39,14 @@ class gdUpload(GoogleDriveHelper):
             self.listener.upDest = self.listener.upDest.replace("sa:", "", 1)
             self.use_sa = True
 
-    def upload(self, size):
+    def upload(self, unwanted_files, ft_delete):
         self.user_setting()
         self.service = self.authorize()
         LOGGER.info(f"Uploading: {self._path}")
         self._updater = setInterval(self.update_interval, self.progress)
         try:
             if ospath.isfile(self._path):
-                if self._path.lower().endswith(tuple(self.listener.extension_filter)):
+                if self._path.lower().endswith(tuple(self.listener.extensionFilter)):
                     raise Exception(
                         "This file extension is excluded by extension filter!"
                     )
@@ -56,7 +56,8 @@ class gdUpload(GoogleDriveHelper):
                     self.listener.name,
                     mime_type,
                     self.listener.upDest,
-                    is_dir=False,
+                    ft_delete,
+                    in_dir=False,
                 )
                 if self.is_cancelled:
                     return
@@ -69,7 +70,7 @@ class gdUpload(GoogleDriveHelper):
                     ospath.basename(ospath.abspath(self.listener.name)),
                     self.listener.upDest,
                 )
-                result = self._upload_dir(self._path, dir_id)
+                result = self._upload_dir(self._path, dir_id, unwanted_files, ft_delete)
                 if result is None:
                     raise Exception("Upload has been manually cancelled!")
                 link = self.G_DRIVE_DIR_BASE_DOWNLOAD_URL.format(dir_id)
@@ -97,14 +98,13 @@ class gdUpload(GoogleDriveHelper):
             async_to_sync(
                 self.listener.onUploadComplete,
                 link,
-                size,
                 self.total_files,
                 self.total_folders,
                 mime_type,
                 dir_id=self.getIdFromUrl(link),
             )
 
-    def _upload_dir(self, input_directory, dest_id):
+    def _upload_dir(self, input_directory, dest_id, unwanted_files, ft_delete):
         list_dirs = listdir(input_directory)
         if len(list_dirs) == 0:
             return dest_id
@@ -113,12 +113,18 @@ class gdUpload(GoogleDriveHelper):
             current_file_name = ospath.join(input_directory, item)
             if ospath.isdir(current_file_name):
                 current_dir_id = self.create_directory(item, dest_id)
-                new_id = self._upload_dir(current_file_name, current_dir_id)
+                new_id = self._upload_dir(
+                    current_file_name, current_dir_id, unwanted_files, ft_delete
+                )
                 self.total_folders += 1
-            elif not item.lower().endswith(tuple(self.listener.extension_filter)):
+            elif current_file_name not in unwanted_files and not item.lower().endswith(
+                tuple(self.listener.extensionFilter)
+            ):
                 mime_type = get_mime_type(current_file_name)
                 file_name = current_file_name.split("/")[-1]
-                self._upload_file(current_file_name, file_name, mime_type, dest_id)
+                self._upload_file(
+                    current_file_name, file_name, mime_type, dest_id, ft_delete
+                )
                 self.total_files += 1
                 new_id = dest_id
             else:
@@ -134,7 +140,9 @@ class gdUpload(GoogleDriveHelper):
         stop=stop_after_attempt(3),
         retry=(retry_if_exception_type(Exception)),
     )
-    def _upload_file(self, file_path, file_name, mime_type, dest_id, is_dir=True):
+    def _upload_file(
+        self, file_path, file_name, mime_type, dest_id, ft_delete, in_dir=True
+    ):
         # File body description
         file_metadata = {
             "name": file_name,
@@ -200,14 +208,19 @@ class gdUpload(GoogleDriveHelper):
                             self.switchServiceAccount()
                             LOGGER.info(f"Got: {reason}, Trying Again.")
                             return self._upload_file(
-                                file_path, file_name, mime_type, dest_id
+                                file_path,
+                                file_name,
+                                mime_type,
+                                dest_id,
+                                ft_delete,
+                                in_dir,
                             )
                     else:
                         LOGGER.error(f"Got: {reason}")
                         raise err
         if self.is_cancelled:
             return
-        if not self.listener.seed or self.listener.newDir:
+        if not self.listener.seed or self.listener.newDir or file_path in ft_delete:
             try:
                 remove(file_path)
             except:
@@ -217,7 +230,7 @@ class gdUpload(GoogleDriveHelper):
         if not config_dict["IS_TEAM_DRIVE"]:
             self.set_permission(response["id"])
         # Define file instance and get url for download
-        if not is_dir:
+        if not in_dir:
             drive_file = (
                 self.service.files()
                 .get(fileId=response["id"], supportsAllDrives=True)

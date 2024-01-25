@@ -1,18 +1,18 @@
-from logging import getLogger
-from asyncio import wait_for, Event, wrap_future, gather
 from aiofiles.os import path as aiopath
-from pyrogram.handlers import CallbackQueryHandler
-from pyrogram.filters import regex, user
+from asyncio import wait_for, Event, wrap_future, gather
 from functools import partial
-from time import time
-from tenacity import RetryError
+from logging import getLogger
 from natsort import natsorted
+from pyrogram.filters import regex, user
+from pyrogram.handlers import CallbackQueryHandler
+from tenacity import RetryError
+from time import time
 
 from bot import config_dict
 from bot.helper.ext_utils.bot_utils import new_thread, new_task, update_user_ldata
-from bot.helper.mirror_utils.gdrive_utils.helper import GoogleDriveHelper
+from bot.helper.ext_utils.db_handler import DbManager
 from bot.helper.ext_utils.status_utils import get_readable_file_size, get_readable_time
-from bot.helper.ext_utils.db_handler import DbManger
+from bot.helper.mirror_utils.gdrive_utils.helper import GoogleDriveHelper
 from bot.helper.telegram_helper.button_build import ButtonMaker
 from bot.helper.telegram_helper.message_utils import (
     sendMessage,
@@ -20,9 +20,7 @@ from bot.helper.telegram_helper.message_utils import (
     deleteMessage,
 )
 
-
 LOGGER = getLogger(__name__)
-
 
 LIST_LIMIT = 6
 
@@ -85,11 +83,11 @@ async def id_updates(_, query, obj):
         obj.event.set()
     elif data[1] == "def":
         id_ = obj.id if obj.token_path != obj.user_token_path else f"mtp:{obj.id}"
-        if id_ != obj.listener.user_dict.get("gdrive_id"):
-            update_user_ldata(obj.listener.user_id, "gdrive_id", id_)
+        if id_ != obj.listener.userDict.get("gdrive_id"):
+            update_user_ldata(obj.listener.userId, "gdrive_id", id_)
             await obj.get_items_buttons()
             if config_dict["DATABASE_URL"]:
-                await DbManger().update_user_data(obj.listener.user_id)
+                await DbManager().update_user_data(obj.listener.userId)
     elif data[1] == "owner":
         obj.token_path = "token.pickle"
         obj.use_sa = False
@@ -124,7 +122,7 @@ class gdriveList(GoogleDriveHelper):
         self.query_proc = False
         self.item_type = "folders"
         self.event = Event()
-        self.user_token_path = f"tokens/{self.listener.user_id}.pickle"
+        self.user_token_path = f"tokens/{self.listener.userId}.pickle"
         self.id = ""
         self.parents = []
         self.list_status = ""
@@ -138,7 +136,7 @@ class gdriveList(GoogleDriveHelper):
         pfunc = partial(id_updates, obj=self)
         handler = self.listener.client.add_handler(
             CallbackQueryHandler(
-                pfunc, filters=regex("^gdq") & user(self.listener.user_id)
+                pfunc, filters=regex("^gdq") & user(self.listener.userId)
             ),
             group=-1,
         )
@@ -210,7 +208,7 @@ class gdriveList(GoogleDriveHelper):
         )
         if self.list_status == "gdu":
             default_id = (
-                self.listener.user_dict.get("gdrive_id") or config_dict["GDRIVE_ID"]
+                self.listener.userDict.get("gdrive_id") or config_dict["GDRIVE_ID"]
             )
             msg += f"\nDefault Gdrive ID: {default_id}" if default_id else ""
         msg += f"\n\nItems: {items_no}"
@@ -219,7 +217,7 @@ class gdriveList(GoogleDriveHelper):
         msg += f"\n\nItem Type: {self.item_type}\nToken Path: {self.token_path}"
         msg += f"\n\nCurrent ID: <code>{self.id}</code>"
         msg += f"\nCurrent Path: <code>{('/').join(i['name'] for i in self.parents)}</code>"
-        msg += f"\nTimeout: {get_readable_time(self._timeout-(time()-self._time))}"
+        msg += f"\nTimeout: {get_readable_time(self._timeout - (time() - self._time))}"
         await self._send_list_message(msg, button)
 
     async def get_items(self, itype=""):
@@ -279,7 +277,9 @@ class gdriveList(GoogleDriveHelper):
                 else "\nTransfer Type: <i>Upload</i>"
             )
             msg += f"\nToken Path: {self.token_path}"
-            msg += f"\nTimeout: {get_readable_time(self._timeout-(time()-self._time))}"
+            msg += (
+                f"\nTimeout: {get_readable_time(self._timeout - (time() - self._time))}"
+            )
             buttons = ButtonMaker()
             self.drives.clear()
             self.parents.clear()
@@ -309,7 +309,9 @@ class gdriveList(GoogleDriveHelper):
                 if self.list_status == "gdd"
                 else "\nTransfer Type: Upload"
             )
-            msg += f"\nTimeout: {get_readable_time(self._timeout-(time()-self._time))}"
+            msg += (
+                f"\nTimeout: {get_readable_time(self._timeout - (time() - self._time))}"
+            )
             buttons = ButtonMaker()
             if self._token_owner:
                 buttons.ibutton("Owner Token", "gdq owner")

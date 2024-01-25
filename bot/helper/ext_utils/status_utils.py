@@ -1,11 +1,10 @@
-from time import time
 from html import escape
 from psutil import virtual_memory, cpu_percent, disk_usage
+from time import time
 
 from bot import DOWNLOAD_DIR, task_dict, task_dict_lock, botStartTime, config_dict
-from bot.helper.telegram_helper.bot_commands import BotCommands
+from bot.helper.ext_utils.bot_utils import sync_to_async
 from bot.helper.telegram_helper.button_build import ButtonMaker
-
 
 SIZE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"]
 
@@ -23,19 +22,20 @@ class MirrorStatus:
     STATUS_CHECKING = "CheckUp"
     STATUS_SEEDING = "Seed"
     STATUS_SAMVID = "SamVid"
+    STATUS_CONVERTING = "Convert"
 
 
-STATUS_VALUES = [
-    ("ALL", "All"),
-    ("DL", MirrorStatus.STATUS_DOWNLOADING),
-    ("UP", MirrorStatus.STATUS_UPLOADING),
-    ("QD", MirrorStatus.STATUS_QUEUEDL),
-    ("QU", MirrorStatus.STATUS_QUEUEUP),
-    ("AR", MirrorStatus.STATUS_ARCHIVING),
-    ("EX", MirrorStatus.STATUS_EXTRACTING),
-    ("CL", MirrorStatus.STATUS_CLONING),
-    ("SD", MirrorStatus.STATUS_SEEDING),
-]
+STATUS_DICT = {
+    "ALL": "All",
+    "DL": MirrorStatus.STATUS_DOWNLOADING,
+    "UP": MirrorStatus.STATUS_UPLOADING,
+    "QD": MirrorStatus.STATUS_QUEUEDL,
+    "QU": MirrorStatus.STATUS_QUEUEUP,
+    "AR": MirrorStatus.STATUS_ARCHIVING,
+    "EX": MirrorStatus.STATUS_EXTRACTING,
+    "CL": MirrorStatus.STATUS_CLONING,
+    "SD": MirrorStatus.STATUS_SEEDING,
+}
 
 
 async def getTaskByGid(gid: str):
@@ -47,7 +47,13 @@ async def getAllTasks(req_status: str):
     async with task_dict_lock:
         if req_status == "all":
             return list(task_dict.values())
-        return [tk for tk in task_dict.values() if tk.status() == req_status]
+        return [
+            tk
+            for tk in task_dict.values()
+            if (st:= await sync_to_async(tk.status) == req_status)
+            or req_status == MirrorStatus.STATUS_DOWNLOADING
+            and st not in STATUS_DICT.values()
+        ]
 
 
 def get_readable_file_size(size_in_bytes: int):
@@ -105,7 +111,7 @@ def get_readable_message(sid, is_user, page_no=1, status="All", page_step=1):
 
     if status == "All":
         tasks = (
-            [tk for tk in task_dict.values() if tk.listener.user_id == sid]
+            [tk for tk in task_dict.values() if tk.listener.userId == sid]
             if is_user
             else list(task_dict.values())
         )
@@ -113,7 +119,7 @@ def get_readable_message(sid, is_user, page_no=1, status="All", page_step=1):
         tasks = [
             tk
             for tk in task_dict.values()
-            if tk.status() == status and tk.listener.user_id == sid
+            if tk.status() == status and tk.listener.userId == sid
         ]
     else:
         tasks = [tk for tk in task_dict.values() if tk.status() == status]
@@ -132,14 +138,15 @@ def get_readable_message(sid, is_user, page_no=1, status="All", page_step=1):
     ):
         tstatus = task.status()
         if task.listener.isSuperChat:
-            msg += f"<b>{index+start_position}.<a href='{task.listener.message.link}'>{tstatus}</a>: </b>"
+            msg += f"<b>{index + start_position}.<a href='{task.listener.message.link}'>{tstatus}</a>: </b>"
         else:
-            msg += f"<b>{index+start_position}.{tstatus}: </b>"
+            msg += f"<b>{index + start_position}.{tstatus}: </b>"
         msg += f"<code>{escape(f'{task.name()}')}</code>"
         if tstatus not in [
             MirrorStatus.STATUS_SPLITTING,
             MirrorStatus.STATUS_SEEDING,
             MirrorStatus.STATUS_SAMVID,
+            MirrorStatus.STATUS_CONVERTING,
         ]:
             msg += f"\n{get_progress_bar_string(task.progress())} {task.progress()}"
             msg += f"\n<b>Processed:</b> {task.processed_bytes()} of {task.size()}"
@@ -157,7 +164,7 @@ def get_readable_message(sid, is_user, page_no=1, status="All", page_step=1):
             msg += f" | <b>Time: </b>{task.seeding_time()}"
         else:
             msg += f"\n<b>Size: </b>{task.size()}"
-        msg += f"\n<code>/{BotCommands.CancelTaskCommand} {task.gid()}</code>\n\n"
+        msg += f"\n<b>Gid: </b><code>{task.gid()}</code>\n\n"
 
     if len(msg) == 0 and status == "All":
         return None, None
@@ -174,7 +181,7 @@ def get_readable_message(sid, is_user, page_no=1, status="All", page_step=1):
             for i in [1, 2, 4, 6, 8, 10, 15, 20]:
                 buttons.ibutton(i, f"status {sid} ps {i}", position="footer")
     if status != "All" or tasks_no > 20:
-        for label, status_value in STATUS_VALUES:
+        for label, status_value in STATUS_DICT.items():
             if status_value != status:
                 buttons.ibutton(label, f"status {sid} st {status_value}")
     buttons.ibutton("♻️", f"status {sid} ref", position="header")

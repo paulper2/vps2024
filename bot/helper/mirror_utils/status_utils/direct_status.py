@@ -16,7 +16,7 @@ class DirectStatus:
 
     def progress_raw(self):
         try:
-            return self._obj.processed_bytes / self._obj.total_size * 100
+            return self._obj.processed_bytes / self.listener.size * 100
         except:
             return 0
 
@@ -30,19 +30,17 @@ class DirectStatus:
         return self.listener.name
 
     def size(self):
-        return get_readable_file_size(self._obj.total_size)
+        return get_readable_file_size(self.listener.size)
 
     def eta(self):
         try:
-            seconds = (
-                self._obj.total_size - self._obj.processed_bytes
-            ) / self._obj.speed
+            seconds = (self.listener.size - self._obj.processed_bytes) / self._obj.speed
             return get_readable_time(seconds)
         except:
             return "-"
 
     def status(self):
-        if self._obj.task and self._obj.task.is_waiting:
+        if self._obj.download_task and self._obj.download_task.is_waiting:
             return MirrorStatus.STATUS_QUEUEDL
         return MirrorStatus.STATUS_DOWNLOADING
 

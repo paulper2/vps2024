@@ -1,21 +1,10 @@
-from pyrogram.handlers import MessageHandler
-from pyrogram.filters import command
-from secrets import token_urlsafe
 from asyncio import gather
 from json import loads
+from pyrogram.filters import command
+from pyrogram.handlers import MessageHandler
+from secrets import token_urlsafe
 
 from bot import LOGGER, task_dict, task_dict_lock, bot
-from bot.helper.mirror_utils.gdrive_utils.clone import gdClone
-from bot.helper.mirror_utils.gdrive_utils.count import gdCount
-from bot.helper.ext_utils.help_messages import CLONE_HELP_MESSAGE
-from bot.helper.telegram_helper.message_utils import (
-    sendMessage,
-    deleteMessage,
-    sendStatusMessage,
-)
-from bot.helper.telegram_helper.filters import CustomFilters
-from bot.helper.telegram_helper.bot_commands import BotCommands
-from bot.helper.mirror_utils.status_utils.gdrive_status import GdriveStatus
 from bot.helper.ext_utils.bot_utils import (
     new_task,
     sync_to_async,
@@ -23,21 +12,31 @@ from bot.helper.ext_utils.bot_utils import (
     cmd_exec,
     arg_parser,
 )
-
+from bot.helper.ext_utils.exceptions import DirectDownloadLinkException
+from bot.helper.ext_utils.help_messages import CLONE_HELP_MESSAGE
 from bot.helper.ext_utils.links_utils import (
     is_gdrive_link,
     is_share_link,
     is_rclone_path,
     is_gdrive_id,
 )
-from bot.helper.ext_utils.exceptions import DirectDownloadLinkException
+from bot.helper.ext_utils.task_manager import stop_duplicate_check
+from bot.helper.listeners.task_listener import TaskListener
 from bot.helper.mirror_utils.download_utils.direct_link_generator import (
     direct_link_generator,
 )
+from bot.helper.mirror_utils.gdrive_utils.clone import gdClone
+from bot.helper.mirror_utils.gdrive_utils.count import gdCount
 from bot.helper.mirror_utils.rclone_utils.transfer import RcloneTransferHelper
+from bot.helper.mirror_utils.status_utils.gdrive_status import GdriveStatus
 from bot.helper.mirror_utils.status_utils.rclone_status import RcloneStatus
-from bot.helper.listeners.task_listener import TaskListener
-from bot.helper.ext_utils.task_manager import stop_duplicate_check
+from bot.helper.telegram_helper.bot_commands import BotCommands
+from bot.helper.telegram_helper.filters import CustomFilters
+from bot.helper.telegram_helper.message_utils import (
+    sendMessage,
+    deleteMessage,
+    sendStatusMessage,
+)
 
 
 class Clone(TaskListener):
@@ -69,7 +68,14 @@ class Clone(TaskListener):
         text = self.message.text.split("\n")
         input_list = text[0].split(" ")
 
-        arg_base = {"link": "", "-i": 0, "-b": False, "-up": "", "-rcf": ""}
+        arg_base = {
+            "link": "",
+            "-i": 0,
+            "-b": False,
+            "-up": "",
+            "-rcf": "",
+            "-sync": False,
+        }
 
         args = arg_parser(input_list[1:], arg_base)
 
@@ -83,6 +89,7 @@ class Clone(TaskListener):
         self.link = args["link"]
 
         isBulk = args["-b"]
+        sync = args["-sync"]
         bulk_start = 0
         bulk_end = 0
 
@@ -114,9 +121,9 @@ class Clone(TaskListener):
         except Exception as e:
             await sendMessage(self.message, e)
             return
-        await self._proceedToClone()
+        await self._proceedToClone(sync)
 
-    async def _proceedToClone(self):
+    async def _proceedToClone(self, sync):
         if is_share_link(self.link):
             try:
                 self.link = await sync_to_async(direct_link_generator, self.link)
@@ -127,8 +134,8 @@ class Clone(TaskListener):
                     await sendMessage(self.message, str(e))
                     return
         if is_gdrive_link(self.link) or is_gdrive_id(self.link):
-            self.name, mime_type, size, files, _ = await sync_to_async(
-                gdCount().count, self.link, self.user_id
+            self.name, mime_type, self.size, files, _ = await sync_to_async(
+                gdCount().count, self.link, self.userId
             )
             if mime_type is None:
                 await sendMessage(self.message, self.name)
@@ -148,25 +155,21 @@ class Clone(TaskListener):
                 msg = ""
                 gid = token_urlsafe(12)
                 async with task_dict_lock:
-                    task_dict[self.mid] = GdriveStatus(self, drive, size, gid, "cl")
+                    task_dict[self.mid] = GdriveStatus(self, drive, gid, "cl")
                 if self.multi <= 1:
                     await sendStatusMessage(self.message)
-            flink, size, mime_type, files, folders, dir_id = await sync_to_async(
-                drive.clone
-            )
+            flink, mime_type, files, folders, dir_id = await sync_to_async(drive.clone)
             if msg:
                 await deleteMessage(msg)
             if not flink:
                 return
-            await self.onUploadComplete(
-                flink, size, files, folders, mime_type, dir_id=dir_id
-            )
+            await self.onUploadComplete(flink, files, folders, mime_type, dir_id=dir_id)
             LOGGER.info(f"Cloning Done: {self.name}")
         elif is_rclone_path(self.link):
             if self.link.startswith("mrcc:"):
                 self.link = self.link.replace("mrcc:", "", 1)
                 self.upDest = self.upDest.replace("mrcc:", "", 1)
-                config_path = f"rclone/{self.user_id}.conf"
+                config_path = f"rclone/{self.userId}.conf"
             else:
                 config_path = "rclone.conf"
 
@@ -212,8 +215,13 @@ class Clone(TaskListener):
                 task_dict[self.mid] = RcloneStatus(self, RCTransfer, gid, "cl")
             if self.multi <= 1:
                 await sendStatusMessage(self.message)
+            method = "sync" if sync else "copy"
             flink, destination = await RCTransfer.clone(
-                config_path, remote, src_path, mime_type
+                config_path,
+                remote,
+                src_path,
+                mime_type,
+                method,
             )
             if not destination:
                 return
@@ -257,7 +265,7 @@ class Clone(TaskListener):
                     return
                 files = None
                 folders = None
-                size = 0
+                self.size = 0
                 LOGGER.error(
                     f"Error: While getting rclone stat. Path: {destination}. Stderr: {res1[1][:4000]}"
                 )
@@ -265,9 +273,9 @@ class Clone(TaskListener):
                 files = len(res1[0].split("\n"))
                 folders = len(res2[0].strip().split("\n")) if res2[0] else 0
                 rsize = loads(res3[0])
-                size = rsize["bytes"]
+                self.size = rsize["bytes"]
                 await self.onUploadComplete(
-                    flink, size, files, folders, mime_type, destination
+                    flink, files, folders, mime_type, destination
                 )
         else:
             await sendMessage(self.message, CLONE_HELP_MESSAGE)

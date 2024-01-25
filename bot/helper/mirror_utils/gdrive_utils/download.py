@@ -1,8 +1,8 @@
-from logging import getLogger
-from os import makedirs, path as ospath
-from io import FileIO
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
+from io import FileIO
+from logging import getLogger
+from os import makedirs, path as ospath
 from tenacity import (
     retry,
     wait_exponential,
@@ -11,8 +11,8 @@ from tenacity import (
     RetryError,
 )
 
-from bot.helper.ext_utils.bot_utils import setInterval
 from bot.helper.ext_utils.bot_utils import async_to_sync
+from bot.helper.ext_utils.bot_utils import setInterval
 from bot.helper.mirror_utils.gdrive_utils.helper import GoogleDriveHelper
 
 LOGGER = getLogger(__name__)
@@ -27,7 +27,7 @@ class gdDownload(GoogleDriveHelper):
         self.is_downloading = True
 
     def download(self):
-        file_id = self.getIdFromUrl(self.listener.link, self.listener.user_id)
+        file_id = self.getIdFromUrl(self.listener.link, self.listener.userId)
         self.service = self.authorize()
         self._updater = setInterval(self.update_interval, self.progress)
         try:
@@ -84,7 +84,7 @@ class gdDownload(GoogleDriveHelper):
                 self._download_folder(file_id, path, filename)
             elif not ospath.isfile(
                 f"{path}{filename}"
-            ) and not filename.lower().endswith(tuple(self.listener.extension_filter)):
+            ) and not filename.lower().endswith(tuple(self.listener.extensionFilter)):
                 self._download_file(file_id, path, filename, mime_type)
             if self.is_cancelled:
                 break
@@ -105,7 +105,7 @@ class gdDownload(GoogleDriveHelper):
         if self.is_cancelled:
             return
         fh = FileIO(f"{path}/{filename}", "wb")
-        downloader = MediaIoBaseDownload(fh, request, chunksize=100 * 1024 * 1024)
+        downloader = MediaIoBaseDownload(fh, request, chunksize=50 * 1024 * 1024)
         done = False
         retries = 0
         while not done:
