@@ -1,6 +1,6 @@
 from aiofiles import open as aiopen
 from aiofiles.os import path as aiopath, remove
-from asyncio import gather, create_subprocess_exec
+from asyncio import gather, create_subprocess_exec, sleep
 from os import execl as osexecl
 from psutil import (
     disk_usage,
@@ -33,7 +33,7 @@ from .helper.ext_utils.jdownloader_booter import jdownloader
 from .helper.ext_utils.status_utils import get_readable_file_size, get_readable_time
 from .helper.ext_utils.telegraph_helper import telegraph
 from .helper.listeners.aria2_listener import start_aria2_listener
-from .helper.mirror_utils.rclone_utils.serve import rclone_serve_booter
+from .helper.mirror_leech_utils.rclone_utils.serve import rclone_serve_booter
 from .helper.telegram_helper.bot_commands import BotCommands
 from .helper.telegram_helper.button_build import ButtonMaker
 from .helper.telegram_helper.filters import CustomFilters
@@ -112,6 +112,7 @@ Type /{BotCommands.HelpCommand} to get a list of available commands
 
 
 async def restart(_, message):
+    Intervals["stopAll"] = True
     restart_message = await sendMessage(message, "Restarting...")
     if scheduler.running:
         scheduler.shutdown(wait=False)
@@ -122,7 +123,9 @@ async def restart(_, message):
     if st := Intervals["status"]:
         for intvl in list(st.values()):
             intvl.cancel()
+    await sleep(1)
     await sync_to_async(clean_all)
+    await sleep(1)
     proc1 = await create_subprocess_exec(
         "pkill", "-9", "-f", "gunicorn|aria2c|qbittorrent-nox|ffmpeg|rclone|java"
     )
@@ -157,8 +160,8 @@ NOTE: Try each command without any argument to see more detalis.
 /{BotCommands.CloneCommand} [drive_url]: Copy file/folder to Google Drive.
 /{BotCommands.CountCommand} [drive_url]: Count file/folder of Google Drive.
 /{BotCommands.DeleteCommand} [drive_url]: Delete file/folder from Google Drive (Only Owner & Sudo).
-/{BotCommands.UserSetCommand} [query]: Users settings.
-/{BotCommands.BotSetCommand} [query]: Bot settings.
+/{BotCommands.UserSetCommand[0]} or /{BotCommands.UserSetCommand[1]} [query]: Users settings.
+/{BotCommands.BotSetCommand[0]} or /{BotCommands.BotSetCommand[1]} [query]: Bot settings.
 /{BotCommands.BtSelectCommand}: Select files from torrents by gid or reply.
 /{BotCommands.CancelTaskCommand[0]} or /{BotCommands.CancelTaskCommand[1]} [gid]: Cancel task by gid or reply.
 /{BotCommands.ForceStartCommand[0]} or /{BotCommands.ForceStartCommand[1]} [gid]: Force start task by gid or reply.

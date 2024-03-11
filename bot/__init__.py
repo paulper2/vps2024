@@ -13,7 +13,7 @@ from logging import (
     warning as log_warning,
     ERROR,
 )
-from os import remove, path as ospath, environ, getcwd
+from os import remove, path as ospath, environ
 from pymongo import MongoClient
 from pyrogram import Client as tgClient, enums
 from qbittorrentapi import Client as qbClient
@@ -45,11 +45,9 @@ basicConfig(
 
 LOGGER = getLogger(__name__)
 
-aria2 = ariaAPI(ariaClient(host="http://localhost", port=6800, secret=""))
-
 load_dotenv("config.env", override=True)
 
-Intervals = {"status": {}, "qb": "", "jd": ""}
+Intervals = {"status": {}, "qb": "", "jd": "", "stopAll": False}
 QbTorrents = {}
 jd_downloads = {}
 DRIVES_NAMES = []
@@ -138,6 +136,14 @@ if DATABASE_URL:
         LOGGER.error(f"Database ERROR: {e}")
 else:
     config_dict = {}
+
+if not ospath.exists(".netrc"):
+    with open(".netrc", "w"):
+        pass
+run(
+    "chmod 600 .netrc && cp .netrc /root/.netrc && chmod +x aria-nox.sh && ./aria-nox.sh",
+    shell=True,
+)
 
 OWNER_ID = environ.get("OWNER_ID", "")
 if len(OWNER_ID) == 0:
@@ -358,6 +364,9 @@ RCLONE_SERVE_PASS = environ.get("RCLONE_SERVE_PASS", "")
 if len(RCLONE_SERVE_PASS) == 0:
     RCLONE_SERVE_PASS = ""
 
+NAME_SUBSTITUTE = environ.get("NAME_SUBSTITUTE", "")
+NAME_SUBSTITUTE = "" if len(NAME_SUBSTITUTE) == 0 else NAME_SUBSTITUTE
+
 config_dict = {
     "AS_DOCUMENT": AS_DOCUMENT,
     "AUTHORIZED_CHATS": AUTHORIZED_CHATS,
@@ -381,6 +390,7 @@ config_dict = {
     "LEECH_FILENAME_PREFIX": LEECH_FILENAME_PREFIX,
     "LEECH_SPLIT_SIZE": LEECH_SPLIT_SIZE,
     "MEDIA_GROUP": MEDIA_GROUP,
+    "NAME_SUBSTITUTE": NAME_SUBSTITUTE,
     "OWNER_ID": OWNER_ID,
     "QUEUE_ALL": QUEUE_ALL,
     "QUEUE_DOWNLOAD": QUEUE_DOWNLOAD,
@@ -436,14 +446,6 @@ if BASE_URL:
         shell=True,
     )
 
-run(["qbittorrent-nox", "-d", f"--profile={getcwd()}"])
-if not ospath.exists(".netrc"):
-    with open(".netrc", "w"):
-        pass
-run(
-    "chmod 600 .netrc && cp .netrc /root/.netrc && chmod +x aria.sh && ./aria.sh",
-    shell=True,
-)
 if ospath.exists("accounts.zip"):
     if ospath.exists("accounts"):
         run(["rm", "-rf", "accounts"])
@@ -454,7 +456,7 @@ if not ospath.exists("accounts"):
     config_dict["USE_SERVICE_ACCOUNTS"] = False
 
 
-def get_client():
+def get_qb_client():
     return qbClient(
         host="localhost",
         port=8090,
@@ -479,20 +481,6 @@ aria2c_global = [
     "server-stat-of",
 ]
 
-qb_client = get_client()
-if not qbit_options:
-    qbit_options = dict(qb_client.app_preferences())
-    del qbit_options["listen_port"]
-    for k in list(qbit_options.keys()):
-        if k.startswith("rss"):
-            del qbit_options[k]
-else:
-    qb_opt = {**qbit_options}
-    for k, v in list(qb_opt.items()):
-        if v in ["", "*"]:
-            del qb_opt[k]
-    qb_client.app_set_preferences(qb_opt)
-
 log_info("Creating client from BOT_TOKEN")
 bot = tgClient(
     "bot",
@@ -504,9 +492,24 @@ bot = tgClient(
     max_concurrent_transmissions=10,
 ).start()
 bot_loop = bot.loop
+bot_name = bot.me.username
 
 scheduler = AsyncIOScheduler(timezone=str(get_localzone()), event_loop=bot_loop)
 
+if not qbit_options:
+    qbit_options = dict(get_qb_client().app_preferences())
+    del qbit_options["listen_port"]
+    for k in list(qbit_options.keys()):
+        if k.startswith("rss"):
+            del qbit_options[k]
+else:
+    qb_opt = {**qbit_options}
+    for k, v in list(qb_opt.items()):
+        if v in ["", "*"]:
+            del qb_opt[k]
+    get_qb_client().app_set_preferences(qb_opt)
+
+aria2 = ariaAPI(ariaClient(host="http://localhost", port=6800, secret=""))
 if not aria2_options:
     aria2_options = aria2.client.get_global_option()
 else:
