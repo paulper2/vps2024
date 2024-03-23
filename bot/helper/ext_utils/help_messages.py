@@ -52,7 +52,7 @@ If DEFAULT_UPLOAD is `rc` then you can pass up: `gd` to upload using gdrive tool
 If DEFAULT_UPLOAD is `gd` then you can pass up: `rc` to upload to RCLONE_PATH.
 
 If you want to add path or gdrive manually from your config/token (uploaded from usetting) add mrcc: for rclone and mtp: before the path/gdrive_id without space.
-/cmd link -up mrcc:main:dump or -up mtp:gdrive_id or -up b:id/@username/pm(leech by bot) or -up u:id/@username(leech by user)
+/cmd link -up mrcc:main:dump or -up mtp:gdrive_id or -up b:id/@username/pm(leech by bot) or -up u:id/@username(leech by user) or -up m:id/@username(mixed leech)
 
 Incase you want to specify whether using token.pickle or service accounts you can add tp:gdrive_id or sa:gdrive_id or mtp:gdrive_id.
 DEFAULT_UPLOAD doesn't effect on leech cmds.
@@ -181,6 +181,17 @@ If DEFAULT_UPLOAD is `gd` then you can pass up: `rc` to upload to RCLONE_PATH.
 /cmd rcl or rclonePath -up rclonePath or rc or rcl
 /cmd mrcc:rclonePath -up rcl or rc(if you have add rclone path from usetting) (to use user config)"""
 
+name_sub = """<b>Name Substitution</b>: -ns
+/cmd link -ns tea : coffee : s|ACC :  : s|mP4
+This will effect on all files. Formate: wordToReplace : wordToReplaceWith : sensitiveCase
+1. tea will get replaced by coffee with sensitive case because I have added `s` last of the option.
+2. ACC will get removed because I have added nothing between to replace with sensitive case because I have added `s` last of the option.
+3. mP4 will get removed because I have added nothing to replace with
+"""
+
+mixed_leech = """Mixed leech: -ml
+/cmd link -ml (leech by user and bot sessionwith respect to size)"""
+
 YT_HELP_DICT = {
     "main": yt,
     "New-Name": f"{new_name}\nNote: Don't add file extension",
@@ -198,6 +209,8 @@ YT_HELP_DICT = {
     "Screenshot": screenshot,
     "Convert-Media": convert_media,
     "Force-Start": force_start,
+    "Name-Substitute": name_sub,
+    "Mixed-Leech": mixed_leech,
 }
 
 MIRROR_HELP_DICT = {
@@ -223,6 +236,8 @@ MIRROR_HELP_DICT = {
     "Convert-Media": convert_media,
     "Force-Start": force_start,
     "User-Download": user_download,
+    "Name-Substitute": name_sub,
+    "Mixed-Leech": mixed_leech,
 }
 
 CLONE_HELP_DICT = {
@@ -242,6 +257,7 @@ Title3 link -c cmd -d ratio:time -z password
 -c command -up mrcc:remote:path/subdir -rcf --buffer-size:8M|key|key:value
 -inf For included words filter.
 -exf For excluded words filter.
+-stv true or false (sensitive filter)
 
 Example: Title https://www.rss-url.com -inf 1080 or 720 or 144p|mkv or mp4|hevc -exf flv or web|xxx
 This filter will parse links that it's titles contains `(1080 or 720 or 144p) and (mkv or mp4) and hevc` and doesn't conyain (flv or web) and xxx` words. You can add whatever you want.

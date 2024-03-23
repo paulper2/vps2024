@@ -94,6 +94,7 @@ class TaskConfig:
         self.isYtDlp = False
         self.equalSplits = False
         self.userTransmission = False
+        self.mixedLeech = False
         self.extract = False
         self.compress = False
         self.select = False
@@ -156,7 +157,9 @@ class TaskConfig:
 
     async def beforeStart(self):
         self.nameSub = (
-            self.userDict.get("name_sub", False) or config_dict["NAME_SUBSTITUTE"]
+            self.nameSub
+            or self.userDict.get("name_sub", False)
+            or config_dict["NAME_SUBSTITUTE"]
             if "name_sub" not in self.userDict
             else ""
         )
@@ -256,14 +259,23 @@ class TaskConfig:
                 or self.userDict.get("leech_dest")
                 or config_dict["LEECH_DUMP_CHAT"]
             )
+            self.mixedLeech = IS_PREMIUM_USER and (
+                self.userDict.get("mixed_leech")
+                or config_dict["MIXED_LEECH"]
+                and "mixed_leech" not in self.userDict
+            )
             if self.upDest:
                 if not isinstance(self.upDest, int):
                     if self.upDest.startswith("b:"):
                         self.upDest = self.upDest.replace("b:", "", 1)
                         self.userTransmission = False
+                        self.mixedLeech = False
                     elif self.upDest.startswith("u:"):
                         self.upDest = self.upDest.replace("u:", "", 1)
                         self.userTransmission = IS_PREMIUM_USER
+                    elif self.upDest.startswith("m:"):
+                        self.userTransmission = IS_PREMIUM_USER
+                        self.mixedLeech = self.userTransmission
                     if self.upDest.isdigit() or self.upDest.startswith("-"):
                         self.upDest = int(self.upDest)
                     elif self.upDest.lower() == "pm":
@@ -296,8 +308,9 @@ class TaskConfig:
                         )
                     except:
                         raise ValueError("Start the bot and try again!")
-            elif self.userTransmission and not self.isSuperChat:
+            elif (self.userTransmission or self.mixedLeech) and not self.isSuperChat:
                 self.userTransmission = False
+                self.mixedLeech = False
             if self.splitSize:
                 if self.splitSize.isdigit():
                     self.splitSize = int(self.splitSize)
@@ -336,10 +349,13 @@ class TaskConfig:
                 await self.message.unpin()
             except:
                 pass
-        if username := self.user.username:
-            self.tag = f"@{username}"
-        else:
-            self.tag = self.message.from_user.mention
+        if self.user:
+            if username := self.user.username:
+                self.tag = f"@{username}"
+            elif hasattr(self.user, "mention"):
+                self.tag = self.user.mention
+            else:
+                self.tag = self.user.title
 
     @new_task
     async def run_multi(self, input_list, folder_name, obj):
@@ -582,7 +598,7 @@ class TaskConfig:
             dl_path,
         ]
         if await aiopath.isdir(dl_path):
-            cmd.extend(f"-xr!*.{ext}" for ext in GLOBAL_EXTENSION_FILTER)
+            cmd.extend(f"-xr!*.{ext}" for ext in self.extensionFilter)
             if o_files:
                 for f in o_files:
                     if self.newDir and self.newDir in f:
@@ -906,9 +922,9 @@ class TaskConfig:
             up_dir, name = dl_path.rsplit("/", 1)
             for l in self.nameSub:
                 pattern = l[0]
-                res = l[1] if len(l) > 1  and l[1] else ""
+                res = l[1] if len(l) > 1 and l[1] else ""
                 sen = len(l) > 2 and l[2] == "s"
-                new_name = sub(fr"{pattern}", res, name, flags= I if sen else 0)
+                new_name = sub(rf"{pattern}", res, name, flags=I if sen else 0)
             new_path = ospath.join(up_dir, new_name)
             await move(dl_path, new_path)
             return new_path
@@ -918,8 +934,8 @@ class TaskConfig:
                     f_path = ospath.join(dirpath, file_)
                     for l in self.nameSub:
                         pattern = l[0]
-                        res = l[1] if len(l) > 1  and l[1] else ""
+                        res = l[1] if len(l) > 1 and l[1] else ""
                         sen = len(l) > 2 and l[2] == "s"
-                        new_name = sub(fr"{pattern}", res, name, flags= I if sen else 0)
+                        new_name = sub(rf"{pattern}", res, file_, flags=I if sen else 0)
                     await move(f_path, ospath.join(dirpath, new_name))
             return dl_path
