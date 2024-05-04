@@ -14,7 +14,8 @@ from logging import (
     ERROR,
 )
 from os import remove, path as ospath, environ
-from pymongo import MongoClient
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
 from pyrogram import Client as tgClient, enums
 from qbittorrentapi import Client as qbClient
 from socket import setdefaulttimeout
@@ -34,6 +35,7 @@ getLogger("requests").setLevel(INFO)
 getLogger("urllib3").setLevel(INFO)
 getLogger("pyrogram").setLevel(ERROR)
 getLogger("httpx").setLevel(ERROR)
+getLogger("pymongo").setLevel(ERROR)
 
 botStartTime = time()
 
@@ -93,7 +95,7 @@ if len(DATABASE_URL) == 0:
 
 if DATABASE_URL:
     try:
-        conn = MongoClient(DATABASE_URL)
+        conn = MongoClient(DATABASE_URL, server_api=ServerApi("1"))
         db = conn.mltb
         current_config = dict(dotenv_values("config.env"))
         old_config = db.settings.deployConfig.find_one({"_id": bot_id})
