@@ -89,6 +89,7 @@ class TaskConfig:
         self.size = 0
         self.isLeech = False
         self.isQbit = False
+        self.isNzb = False
         self.isJd = False
         self.isClone = False
         self.isYtDlp = False
@@ -164,13 +165,14 @@ class TaskConfig:
             else ""
         )
         if self.nameSub:
-            self.nameSub = [x.split(" : ") for x in self.nameSub.split("|")]
+            self.nameSub = [x.split(" : ") for x in self.nameSub.split(" | ")]
             self.seed = False
-        self.extensionFilter = (
-            self.userDict.get("excluded_extensions") or GLOBAL_EXTENSION_FILTER
+        self.extensionFilter = self.userDict.get("excluded_extensions") or (
+            GLOBAL_EXTENSION_FILTER
             if "excluded_extensions" not in self.userDict
             else ["aria2", "!qB"]
         )
+        LOGGER.info(self.extensionFilter)
         if self.link not in ["rcl", "gdl"]:
             if not self.isYtDlp and not self.isJd:
                 await self.isTokenExists(self.link, "dl")
@@ -406,6 +408,7 @@ class TaskConfig:
             self.isQbit,
             self.isLeech,
             self.isJd,
+            self.isNzb,
             self.sameDir,
             self.bulk,
             self.multiTag,
@@ -439,6 +442,7 @@ class TaskConfig:
                 self.isQbit,
                 self.isLeech,
                 self.isJd,
+                self.isNzb,
                 self.sameDir,
                 self.bulk,
                 self.multiTag,
