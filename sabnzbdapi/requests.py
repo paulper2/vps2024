@@ -1,5 +1,4 @@
-from httpx import AsyncClient, Response, DecodingError
-from httpx import AsyncHTTPTransport
+from httpx import AsyncClient, DecodingError, AsyncHTTPTransport, Timeout
 from urllib3 import disable_warnings
 from urllib3.exceptions import InsecureRequestWarning
 from functools import wraps
@@ -10,13 +9,9 @@ from .exception import APIConnectionError
 
 class sabnzbdSession(AsyncClient):
     @wraps(AsyncClient.request)
-    async def request(self, method: str, url: str, **kwargs) -> Response:
-        kwargs.setdefault("timeout", 15.1)
+    async def request(self, method: str, url: str, **kwargs):
+        kwargs.setdefault("timeout", Timeout(connect=30, read=60, write=60, pool=None))
         kwargs.setdefault("follow_redirects", True)
-        data = kwargs.get("data") or {}
-        is_data = any(x is not None for x in data.values())
-        if method.lower() == "post" and not is_data:
-            kwargs.setdefault("headers", {}).update({"Content-Length": "0"})
         return await super().request(method, url, **kwargs)
 
 
@@ -30,7 +25,7 @@ class sabnzbdClient(JobFunctions):
         api_key: str,
         port: str = "8070",
         VERIFY_CERTIFICATE: bool = False,
-        RETRIES: int = 3,
+        RETRIES: int = 10,
         HTTPX_REQUETS_ARGS: dict = None,
     ):
         if HTTPX_REQUETS_ARGS is None:

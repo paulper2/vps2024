@@ -1,12 +1,12 @@
 from aiofiles.os import remove, path as aiopath
-from asyncio import sleep, gather
+from asyncio import sleep
 from time import time
 
 from bot import (
     task_dict,
     task_dict_lock,
     Intervals,
-    get_qb_client,
+    qbittorrent_client,
     config_dict,
     QbTorrents,
     qb_listener_lock,
@@ -21,104 +21,105 @@ from bot.helper.mirror_leech_utils.status_utils.qbit_status import QbittorrentSt
 from bot.helper.telegram_helper.message_utils import update_status_message
 
 
-async def _remove_torrent(client, hash_, tag):
-    await sync_to_async(client.torrents_delete, torrent_hashes=hash_, delete_files=True)
+async def _remove_torrent(hash_, tag):
+    await sync_to_async(
+        qbittorrent_client.torrents_delete, torrent_hashes=hash_, delete_files=True
+    )
     async with qb_listener_lock:
         if tag in QbTorrents:
             del QbTorrents[tag]
-    await sync_to_async(client.torrents_delete_tags, tags=tag)
-    await sync_to_async(client.auth_log_out)
+    await sync_to_async(qbittorrent_client.torrents_delete_tags, tags=tag)
 
 
 @new_task
 async def _onDownloadError(err, tor, button=None):
     LOGGER.info(f"Cancelling Download: {tor.name}")
     ext_hash = tor.hash
-    task = await getTaskByGid(ext_hash[:12])
-    if not hasattr(task, "client"):
-        return
-    await gather(
-        task.listener.onDownloadError(err, button),
-        sync_to_async(task.client.torrents_pause, torrent_hashes=ext_hash),
-    )
+    if task := await getTaskByGid(ext_hash[:12]):
+        await task.listener.onDownloadError(err, button)
+    await sync_to_async(qbittorrent_client.torrents_pause, torrent_hashes=ext_hash)
     await sleep(0.3)
-    await _remove_torrent(task.client, ext_hash, tor.tags)
+    await _remove_torrent(ext_hash, tor.tags)
 
 
 @new_task
 async def _onSeedFinish(tor):
     ext_hash = tor.hash
     LOGGER.info(f"Cancelling Seed: {tor.name}")
-    task = await getTaskByGid(ext_hash[:12])
-    if not hasattr(task, "client"):
-        return
-    msg = f"Seeding stopped with Ratio: {round(tor.ratio, 3)} and Time: {get_readable_time(tor.seeding_time)}"
-    await task.listener.onUploadError(msg)
-    await _remove_torrent(task.client, ext_hash, tor.tags)
+    if task := await getTaskByGid(ext_hash[:12]):
+        msg = f"Seeding stopped with Ratio: {round(tor.ratio, 3)} and Time: {get_readable_time(tor.seeding_time)}"
+        await task.listener.onUploadError(msg)
+    await _remove_torrent(ext_hash, tor.tags)
 
 
 @new_task
 async def _stop_duplicate(tor):
-    task = await getTaskByGid(tor.hash[:12])
-    if not hasattr(task, "listener"):
-        return
-    if task.listener.stopDuplicate:
-        task.listener.name = tor.content_path.rsplit("/", 1)[-1].rsplit(".!qB", 1)[0]
-        msg, button = await stop_duplicate_check(task.listener)
-        if msg:
-            _onDownloadError(msg, tor, button)
+    if task := await getTaskByGid(tor.hash[:12]):
+        if task.listener.stopDuplicate:
+            task.listener.name = tor.content_path.rsplit("/", 1)[-1].rsplit(".!qB", 1)[
+                0
+            ]
+            msg, button = await stop_duplicate_check(task.listener)
+            if msg:
+                _onDownloadError(msg, tor, button)
 
 
 @new_task
 async def _onDownloadComplete(tor):
     ext_hash = tor.hash
     tag = tor.tags
-    task = await getTaskByGid(ext_hash[:12])
-    if not task.listener.seed:
-        await sync_to_async(task.client.torrents_pause, torrent_hashes=ext_hash)
-    if task.listener.select:
-        await clean_unwanted(task.listener.dir)
-        path = tor.content_path.rsplit("/", 1)[0]
-        res = await sync_to_async(task.client.torrents_files, torrent_hash=ext_hash)
-        for f in res:
-            if f.priority == 0 and await aiopath.exists(f"{path}/{f.name}"):
-                try:
-                    await remove(f"{path}/{f.name}")
-                except:
-                    pass
-    await task.listener.onDownloadComplete()
-    if Intervals["stopAll"]:
-        return
-    if task.listener.seed and not task.listener.isCancelled:
-        async with task_dict_lock:
-            if task.listener.mid in task_dict:
-                removed = False
-                task_dict[task.listener.mid] = QbittorrentStatus(task.listener, True)
-            else:
-                removed = True
-        if removed:
-            await _remove_torrent(task.client, ext_hash, tag)
+    if task := await getTaskByGid(ext_hash[:12]):
+        if not task.listener.seed:
+            await sync_to_async(
+                qbittorrent_client.torrents_pause, torrent_hashes=ext_hash
+            )
+        if task.listener.select:
+            await clean_unwanted(task.listener.dir)
+            path = tor.content_path.rsplit("/", 1)[0]
+            res = await sync_to_async(
+                qbittorrent_client.torrents_files, torrent_hash=ext_hash
+            )
+            for f in res:
+                if f.priority == 0 and await aiopath.exists(f"{path}/{f.name}"):
+                    try:
+                        await remove(f"{path}/{f.name}")
+                    except:
+                        pass
+        await task.listener.onDownloadComplete()
+        if Intervals["stopAll"]:
             return
-        async with qb_listener_lock:
-            if tag in QbTorrents:
-                QbTorrents[tag]["seeding"] = True
-            else:
+        if task.listener.seed and not task.listener.isCancelled:
+            async with task_dict_lock:
+                if task.listener.mid in task_dict:
+                    removed = False
+                    task_dict[task.listener.mid] = QbittorrentStatus(
+                        task.listener, True
+                    )
+                else:
+                    removed = True
+            if removed:
+                await _remove_torrent(ext_hash, tag)
                 return
-        await update_status_message(task.listener.message.chat.id)
-        LOGGER.info(f"Seeding started: {tor.name} - Hash: {ext_hash}")
+            async with qb_listener_lock:
+                if tag in QbTorrents:
+                    QbTorrents[tag]["seeding"] = True
+                else:
+                    return
+            await update_status_message(task.listener.message.chat.id)
+            LOGGER.info(f"Seeding started: {tor.name} - Hash: {ext_hash}")
+        else:
+            await _remove_torrent(ext_hash, tag)
     else:
-        await _remove_torrent(task.client, ext_hash, tag)
+        await _remove_torrent(ext_hash, tag)
 
 
 async def _qb_listener():
-    client = get_qb_client()
     while True:
         async with qb_listener_lock:
             try:
-                torrents = await sync_to_async(client.torrents_info)
+                torrents = await sync_to_async(qbittorrent_client.torrents_info)
                 if len(torrents) == 0:
                     Intervals["qb"] = ""
-                    await sync_to_async(client.auth_log_out)
                     break
                 for tor_info in torrents:
                     tag = tor_info.tags
@@ -135,7 +136,8 @@ async def _qb_listener():
                             _onDownloadError("Dead Torrent!", tor_info)
                         else:
                             await sync_to_async(
-                                client.torrents_reannounce, torrent_hashes=tor_info.hash
+                                qbittorrent_client.torrents_reannounce,
+                                torrent_hashes=tor_info.hash,
                             )
                     elif state == "downloading":
                         QbTorrents[tag]["stalled_time"] = time()
@@ -153,7 +155,8 @@ async def _qb_listener():
                             msg += f"Size: {tor_info.size} Total Size: {tor_info.total_size}"
                             LOGGER.warning(msg)
                             await sync_to_async(
-                                client.torrents_recheck, torrent_hashes=tor_info.hash
+                                qbittorrent_client.torrents_recheck,
+                                torrent_hashes=tor_info.hash,
                             )
                             QbTorrents[tag]["rechecked"] = True
                         elif (
@@ -164,11 +167,13 @@ async def _qb_listener():
                             _onDownloadError("Dead Torrent!", tor_info)
                         else:
                             await sync_to_async(
-                                client.torrents_reannounce, torrent_hashes=tor_info.hash
+                                qbittorrent_client.torrents_reannounce,
+                                torrent_hashes=tor_info.hash,
                             )
                     elif state == "missingFiles":
                         await sync_to_async(
-                            client.torrents_recheck, torrent_hashes=tor_info.hash
+                            qbittorrent_client.torrents_recheck,
+                            torrent_hashes=tor_info.hash,
                         )
                     elif state == "error":
                         _onDownloadError(

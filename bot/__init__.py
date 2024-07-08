@@ -1,6 +1,6 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aria2p import API as ariaAPI, Client as ariaClient
-from asyncio import Lock
+from asyncio import Lock, get_event_loop
 from dotenv import load_dotenv, dotenv_values
 from logging import (
     getLogger,
@@ -24,7 +24,6 @@ from subprocess import Popen, run
 from time import time
 from tzlocal import get_localzone
 from uvloop import install
-from asyncio import run as aiorun
 
 # from faulthandler import enable as faulthandler_enable
 # faulthandler_enable()
@@ -40,6 +39,7 @@ getLogger("httpx").setLevel(ERROR)
 getLogger("pymongo").setLevel(ERROR)
 
 botStartTime = time()
+bot_loop = get_event_loop()
 
 basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -179,6 +179,27 @@ if len(TELEGRAM_HASH) == 0:
     log_error("TELEGRAM_HASH variable is missing! Exiting now")
     exit(1)
 
+USER_SESSION_STRING = environ.get("USER_SESSION_STRING", "")
+if len(USER_SESSION_STRING) != 0:
+    log_info("Creating client from USER_SESSION_STRING")
+    try:
+        user = tgClient(
+            "user",
+            TELEGRAM_API,
+            TELEGRAM_HASH,
+            session_string=USER_SESSION_STRING,
+            parse_mode=enums.ParseMode.HTML,
+            max_concurrent_transmissions=10,
+        ).start()
+        IS_PREMIUM_USER = user.me.is_premium
+    except:
+        log_error("Failed to start client from USER_SESSION_STRING")
+        IS_PREMIUM_USER = False
+        user = ""
+else:
+    IS_PREMIUM_USER = False
+    user = ""
+
 GDRIVE_ID = environ.get("GDRIVE_ID", "")
 if len(GDRIVE_ID) == 0:
     GDRIVE_ID = ""
@@ -220,27 +241,6 @@ if len(EXTENSION_FILTER) > 0:
         x = x.lstrip(".")
         GLOBAL_EXTENSION_FILTER.append(x.strip().lower())
 
-USER_SESSION_STRING = environ.get("USER_SESSION_STRING", "")
-if len(USER_SESSION_STRING) != 0:
-    log_info("Creating client from USER_SESSION_STRING")
-    try:
-        user = tgClient(
-            "user",
-            TELEGRAM_API,
-            TELEGRAM_HASH,
-            session_string=USER_SESSION_STRING,
-            parse_mode=enums.ParseMode.HTML,
-            max_concurrent_transmissions=10,
-        ).start()
-        IS_PREMIUM_USER = user.me.is_premium
-    except:
-        log_error("Failed to create client from USER_SESSION_STRING")
-        IS_PREMIUM_USER = False
-        user = ""
-else:
-    IS_PREMIUM_USER = False
-    user = ""
-
 JD_EMAIL = environ.get("JD_EMAIL", "")
 JD_PASS = environ.get("JD_PASS", "")
 if len(JD_EMAIL) == 0 or len(JD_PASS) == 0:
@@ -251,7 +251,7 @@ USENET_SERVERS = environ.get("USENET_SERVERS", "")
 try:
     if len(USENET_SERVERS) == 0:
         USENET_SERVERS = []
-    elif not eval(USENET_SERVERS)[0]["host"]:
+    elif (us := eval(USENET_SERVERS)) and not us[0].get("host"):
         USENET_SERVERS = []
     else:
         USENET_SERVERS = eval(USENET_SERVERS)
@@ -320,7 +320,7 @@ if LEECH_DUMP_CHAT.isdigit() or LEECH_DUMP_CHAT.startswith("-"):
     LEECH_DUMP_CHAT = int(LEECH_DUMP_CHAT)
 
 STATUS_LIMIT = environ.get("STATUS_LIMIT", "")
-STATUS_LIMIT = 10 if len(STATUS_LIMIT) == 0 else int(STATUS_LIMIT)
+STATUS_LIMIT = 4 if len(STATUS_LIMIT) == 0 else int(STATUS_LIMIT)
 
 CMD_SUFFIX = environ.get("CMD_SUFFIX", "")
 
@@ -498,23 +498,23 @@ if ospath.exists("accounts.zip"):
 if not ospath.exists("accounts"):
     config_dict["USE_SERVICE_ACCOUNTS"] = False
 
+qbittorrent_client = qbClient(
+    host="localhost",
+    port=8090,
+    VERIFY_WEBUI_CERTIFICATE=False,
+    REQUESTS_ARGS={"timeout": (30, 60)},
+    HTTPADAPTER_ARGS={
+        "pool_maxsize": 500,
+        "max_retries": 10,
+        "pool_block": True,
+    },
+)
 
-def get_qb_client():
-    return qbClient(
-        host="localhost",
-        port=8090,
-        VERIFY_WEBUI_CERTIFICATE=False,
-        REQUESTS_ARGS={"timeout": (30, 60)},
-    )
-
-
-def get_sabnzb_client():
-    return sabnzbdClient(
-        host="http://localhost",
-        api_key="mltb",
-        port="8070",
-        HTTPX_REQUETS_ARGS={"timeout": 10},
-    )
+sabnzbd_client = sabnzbdClient(
+    host="http://localhost",
+    api_key="mltb",
+    port="8070",
+)
 
 
 aria2c_global = [
@@ -543,25 +543,23 @@ bot = tgClient(
     parse_mode=enums.ParseMode.HTML,
     max_concurrent_transmissions=10,
 ).start()
-bot_loop = bot.loop
 bot_name = bot.me.username
 
 scheduler = AsyncIOScheduler(timezone=str(get_localzone()), event_loop=bot_loop)
 
+
 def get_qb_options():
     global qbit_options
     if not qbit_options:
-        qbit_options = dict(get_qb_client().app_preferences())
+        qbit_options = dict(qbittorrent_client.app_preferences())
         del qbit_options["listen_port"]
         for k in list(qbit_options.keys()):
             if k.startswith("rss"):
                 del qbit_options[k]
     else:
         qb_opt = {**qbit_options}
-        for k, v in list(qb_opt.items()):
-            if v in ["", "*"]:
-                del qb_opt[k]
-        get_qb_client().app_set_preferences(qb_opt)
+        qbittorrent_client.app_set_preferences(qb_opt)
+
 
 get_qb_options()
 
@@ -575,9 +573,7 @@ else:
 
 async def get_nzb_options():
     global nzb_options
-    zclient = get_sabnzb_client()
-    nzb_options = (await zclient.get_config())["config"]["misc"]
-    await zclient.log_out()
+    nzb_options = (await sabnzbd_client.get_config())["config"]["misc"]
 
 
-aiorun(get_nzb_options())
+bot_loop.run_until_complete(get_nzb_options())
