@@ -218,6 +218,11 @@ def get_captcha_token(session, params):
 def mediafire(url, session=None):
     if "/folder/" in url:
         return mediafireFolder(url)
+    if "::" in url:
+        _password = url.split("::")[-1]
+        url = url.split("::")[-2]
+    else:
+        _password = ""
     if final_link := findall(
         r"https?:\/\/download\d+\.mediafire\.com\/\S+\/\S+\/\S+", url
     ):
@@ -234,13 +239,30 @@ def mediafire(url, session=None):
     if error := html.xpath('//p[@class="notranslate"]/text()'):
         session.close()
         raise DirectDownloadLinkException(f"ERROR: {error[0]}")
+    if html.xpath("//div[@class='passwordPrompt']"):
+        if not _password:
+            session.close()
+            raise DirectDownloadLinkException(
+                f"ERROR: {PASSWORD_ERROR_MESSAGE}".format(url)
+            )
+        try:
+            html = HTML(session.post(url, data={"downloadp": _password}).text)
+        except Exception as e:
+            session.close()
+            raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
+        if html.xpath("//div[@class='passwordPrompt']"):
+            session.close()
+            raise DirectDownloadLinkException("ERROR: Wrong password.")
     if not (final_link := html.xpath("//a[@id='downloadButton']/@href")):
         session.close()
         raise DirectDownloadLinkException(
             "ERROR: No links found in this page Try Again"
         )
     if final_link[0].startswith("//"):
-        return mediafire(f"https://{final_link[0][2:]}", session)
+        final_url = f"https://{final_link[0][2:]}"
+        if _password:
+            final_url += f"::{_password}"
+        return mediafire(final_url, session)
     session.close()
     return final_link[0]
 
@@ -379,7 +401,9 @@ def streamtape(url):
             html = HTML(session.get(url).text)
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
-    script = html.xpath("//script[contains(text(),'ideoooolink')]/text()") or html.xpath("//script[contains(text(),'ideoolink')]/text()")
+    script = html.xpath(
+        "//script[contains(text(),'ideoooolink')]/text()"
+    ) or html.xpath("//script[contains(text(),'ideoolink')]/text()")
     if not script:
         raise DirectDownloadLinkException("ERROR: requeries script not found")
     if not (link := findall(r"(&expires\S+)'", script[0])):
@@ -816,7 +840,7 @@ def linkBox(url: str):
     parsed_url = urlparse(url)
     try:
         shareToken = parsed_url.path.split("/")[-1]
-    except Exception:
+    except:
         raise DirectDownloadLinkException("ERROR: invalid URL")
 
     details = {"contents": [], "title": "", "total_size": 0}
@@ -876,7 +900,7 @@ def linkBox(url: str):
         try:
             if data["shareType"] == "singleItem":
                 return __singleItem(session, data["itemId"])
-        except Exception:
+        except:
             pass
         if not details["title"]:
             details["title"] = data["dirName"]
@@ -1024,11 +1048,16 @@ def gofile(url):
 
 
 def mediafireFolder(url):
+    if "::" in url:
+        _password = url.split("::")[-1]
+        url = url.split("::")[-2]
+    else:
+        _password = ""
     try:
         raw = url.split("/", 4)[-1]
         folderkey = raw.split("/", 1)[0]
         folderkey = folderkey.split(",")
-    except Exception:
+    except:
         raise DirectDownloadLinkException("ERROR: Could not parse ")
     if len(folderkey) == 1:
         folderkey = folderkey[0]
@@ -1083,8 +1112,19 @@ def mediafireFolder(url):
     def __scraper(url):
         try:
             html = HTML(session.get(url).text)
-        except Exception:
+        except:
             return
+        if html.xpath("//div[@class='passwordPrompt']"):
+            if not _password:
+                raise DirectDownloadLinkException(
+                    f"ERROR: {PASSWORD_ERROR_MESSAGE}".format(url)
+                )
+            try:
+                html = HTML(session.post(url, data={"downloadp": _password}).text)
+            except:
+                return
+            if html.xpath("//div[@class='passwordPrompt']"):
+                return
         if final_link := html.xpath("//a[@id='downloadButton']/@href"):
             return final_link[0]
 
@@ -1241,7 +1281,7 @@ def send_cm(url):
             )
             if "Location" in _res.headers:
                 return _res.headers["Location"]
-        except Exception:
+        except:
             pass
 
     def __getFiles(html):
@@ -1613,7 +1653,7 @@ def mp4upload(url):
             data["referer"] = url
             direct_link = session.post(url, data=data).url
             return direct_link, header
-        except Exception:
+        except:
             raise DirectDownloadLinkException("ERROR: File Not Found!")
 
 
