@@ -233,6 +233,7 @@ async def _plugin_buttons(user_id):
     return buttons.build_menu(2)
 
 
+@new_task
 async def torrentSearch(_, message):
     user_id = message.from_user.id
     buttons = ButtonMaker()
@@ -314,7 +315,8 @@ async def torrentSearchUpdate(_, query):
 bot.add_handler(
     MessageHandler(
         torrentSearch,
-        filters=command(BotCommands.SearchCommand) & CustomFilters.authorized,
+        filters=command(BotCommands.SearchCommand, case_sensitive=True)
+        & CustomFilters.authorized,
     )
 )
 bot.add_handler(CallbackQueryHandler(torrentSearchUpdate, filters=regex("^torser")))

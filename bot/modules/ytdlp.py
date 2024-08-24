@@ -1,16 +1,15 @@
 from httpx import AsyncClient
-from asyncio import wait_for, Event, wrap_future
+from asyncio import wait_for, Event
 from functools import partial
 from pyrogram.filters import command, regex, user
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from time import time
 from yt_dlp import YoutubeDL
 
-from bot import DOWNLOAD_DIR, bot, config_dict, LOGGER
+from bot import DOWNLOAD_DIR, bot, config_dict, LOGGER, bot_loop
 from bot.helper.ext_utils.bot_utils import (
     new_task,
     sync_to_async,
-    new_thread,
     arg_parser,
     COMMAND_USAGE,
 )
@@ -76,7 +75,6 @@ class YtSelection:
         self.formats = {}
         self.qual = None
 
-    @new_thread
     async def _event_handler(self):
         pfunc = partial(select_format, obj=self)
         handler = self.listener.client.add_handler(
@@ -96,7 +94,6 @@ class YtSelection:
             self.listener.client.remove_handler(*handler)
 
     async def get_quality(self, result):
-        future = self._event_handler()
         buttons = ButtonMaker()
         if "entries" in result:
             self._is_playlist = True
@@ -172,7 +169,7 @@ class YtSelection:
         self._reply_to = await sendMessage(
             self.listener.message, msg, self._main_buttons
         )
-        await wrap_future(future)
+        await self._event_handler()
         if not self.listener.isCancelled:
             await deleteMessage(self._reply_to)
         return self.qual
@@ -284,7 +281,6 @@ class YtDlp(TaskListener):
         self.isYtDlp = True
         self.isLeech = isLeech
 
-    @new_task
     async def newEvent(self):
         text = self.message.text.split("\n")
         input_list = text[0].split(" ")
@@ -451,21 +447,24 @@ class YtDlp(TaskListener):
 
 
 async def ytdl(client, message):
-    YtDlp(client, message).newEvent()
+    bot_loop.create_task(YtDlp(client, message).newEvent())
 
 
 async def ytdlleech(client, message):
-    YtDlp(client, message, isLeech=True).newEvent()
+    bot_loop.create_task(YtDlp(client, message, isLeech=True).newEvent())
 
 
 bot.add_handler(
     MessageHandler(
-        ytdl, filters=command(BotCommands.YtdlCommand) & CustomFilters.authorized
+        ytdl,
+        filters=command(BotCommands.YtdlCommand, case_sensitive=True)
+        & CustomFilters.authorized,
     )
 )
 bot.add_handler(
     MessageHandler(
         ytdlleech,
-        filters=command(BotCommands.YtdlLeechCommand) & CustomFilters.authorized,
+        filters=command(BotCommands.YtdlLeechCommand, case_sensitive=True)
+        & CustomFilters.authorized,
     )
 )

@@ -17,7 +17,7 @@ from bot import (
     MAX_SPLIT_SIZE,
     GLOBAL_EXTENSION_FILTER,
 )
-from bot.helper.ext_utils.bot_utils import update_user_ldata, new_thread, getSizeBytes
+from bot.helper.ext_utils.bot_utils import update_user_ldata, new_task, getSizeBytes
 from bot.helper.ext_utils.db_handler import DbManager
 from bot.helper.ext_utils.media_utils import createThumb
 from bot.helper.telegram_helper.bot_commands import BotCommands
@@ -203,6 +203,7 @@ async def update_user_settings(query):
     await editMessage(query.message, msg, button)
 
 
+@new_task
 async def user_settings(_, message):
     from_user = message.from_user
     handler_dict[from_user.id] = False
@@ -210,6 +211,7 @@ async def user_settings(_, message):
     await sendMessage(message, msg, button)
 
 
+@new_task
 async def set_thumb(_, message, pre_event):
     user_id = message.from_user.id
     handler_dict[user_id] = False
@@ -221,6 +223,7 @@ async def set_thumb(_, message, pre_event):
         await DbManager().update_user_doc(user_id, "thumb", des_dir)
 
 
+@new_task
 async def add_rclone(_, message, pre_event):
     user_id = message.from_user.id
     handler_dict[user_id] = False
@@ -235,6 +238,7 @@ async def add_rclone(_, message, pre_event):
         await DbManager().update_user_doc(user_id, "rclone_config", des_dir)
 
 
+@new_task
 async def add_token_pickle(_, message, pre_event):
     user_id = message.from_user.id
     handler_dict[user_id] = False
@@ -249,6 +253,7 @@ async def add_token_pickle(_, message, pre_event):
         await DbManager().update_user_doc(user_id, "token_pickle", des_dir)
 
 
+@new_task
 async def delete_path(_, message, pre_event):
     user_id = message.from_user.id
     handler_dict[user_id] = False
@@ -265,6 +270,7 @@ async def delete_path(_, message, pre_event):
         await DbManager().update_user_doc(user_id, "upload_paths", new_value)
 
 
+@new_task
 async def set_option(_, message, pre_event, option):
     user_id = message.from_user.id
     handler_dict[user_id] = False
@@ -331,7 +337,7 @@ async def event_handler(client, query, pfunc, photo=False, document=False):
     client.remove_handler(*handler)
 
 
-@new_thread
+@new_task
 async def edit_user_settings(client, query):
     from_user = query.from_user
     user_id = from_user.id
@@ -834,6 +840,7 @@ Example-2: \(text\) | \[test\] : test | \\text\\ : text : s
         await deleteMessage(message)
 
 
+@new_task
 async def send_users_settings(_, message):
     if user_data:
         msg = ""
@@ -858,13 +865,15 @@ async def send_users_settings(_, message):
 bot.add_handler(
     MessageHandler(
         send_users_settings,
-        filters=command(BotCommands.UsersCommand) & CustomFilters.sudo,
+        filters=command(BotCommands.UsersCommand, case_sensitive=True)
+        & CustomFilters.sudo,
     )
 )
 bot.add_handler(
     MessageHandler(
         user_settings,
-        filters=command(BotCommands.UserSetCommand) & CustomFilters.authorized,
+        filters=command(BotCommands.UserSetCommand, case_sensitive=True)
+        & CustomFilters.authorized,
     )
 )
 bot.add_handler(CallbackQueryHandler(edit_user_settings, filters=regex("^userset")))

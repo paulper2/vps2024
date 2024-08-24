@@ -44,7 +44,7 @@ from bot import (
 from bot.helper.ext_utils.bot_utils import (
     setInterval,
     sync_to_async,
-    new_thread,
+    new_task,
     retry_function,
 )
 from bot.helper.ext_utils.db_handler import DbManager
@@ -159,7 +159,7 @@ async def get_buttons(key=None, edit_type=None):
     elif key == "private":
         buttons.ibutton("Back", "botset back")
         buttons.ibutton("Close", "botset close")
-        msg = """Send private file: config.env, token.pickle, rclone.conf, accounts.zip, list_drives.txt, cookies.txt, terabox.txt, .netrc or any other private file!
+        msg = """Send private file: config.env, token.pickle, rclone.conf, accounts.zip, list_drives.txt, cookies.txt, .netrc or any other private file!
 To delete private file send only the file name as text message.
 Note: Changing .netrc will not take effect for aria2c until restart.
 Timeout: 60 sec"""
@@ -251,6 +251,7 @@ async def update_buttons(message, key=None, edit_type=None):
     await editMessage(message, msg, button)
 
 
+@new_task
 async def edit_variable(_, message, pre_message, key):
     handler_dict[message.chat.id] = False
     value = message.text
@@ -343,6 +344,7 @@ async def edit_variable(_, message, pre_message, key):
             await sabnzbd_client.set_special_config("servers", s)
 
 
+@new_task
 async def edit_aria(_, message, pre_message, key):
     handler_dict[message.chat.id] = False
     value = message.text
@@ -371,6 +373,7 @@ async def edit_aria(_, message, pre_message, key):
         await DbManager().update_aria2(key, value)
 
 
+@new_task
 async def edit_qbit(_, message, pre_message, key):
     handler_dict[message.chat.id] = False
     value = message.text
@@ -390,6 +393,7 @@ async def edit_qbit(_, message, pre_message, key):
         await DbManager().update_qbittorrent(key, value)
 
 
+@new_task
 async def edit_nzb(_, message, pre_message, key):
     handler_dict[message.chat.id] = False
     value = message.text
@@ -405,6 +409,7 @@ async def edit_nzb(_, message, pre_message, key):
         await DbManager().update_nzb_config()
 
 
+@new_task
 async def edit_nzb_server(_, message, pre_message, key, index=0):
     handler_dict[message.chat.id] = False
     value = message.text
@@ -471,6 +476,7 @@ async def sync_jdownloader():
     await DbManager().update_private_file("cfg.zip")
 
 
+@new_task
 async def update_private_file(_, message, pre_message):
     handler_dict[message.chat.id] = False
     if not message.media and (file_name := message.text):
@@ -574,7 +580,7 @@ async def event_handler(client, query, pfunc, rfunc, document=False):
     client.remove_handler(*handler)
 
 
-@new_thread
+@new_task
 async def edit_bot_settings(client, query):
     data = query.data.split()
     message = query.message
@@ -912,6 +918,7 @@ async def edit_bot_settings(client, query):
         await deleteMessage(message)
 
 
+@new_task
 async def bot_settings(_, message):
     handler_dict[message.chat.id] = False
     msg, button = await get_buttons()
@@ -1281,7 +1288,9 @@ async def load_config():
 
 bot.add_handler(
     MessageHandler(
-        bot_settings, filters=command(BotCommands.BotSetCommand) & CustomFilters.sudo
+        bot_settings,
+        filters=command(BotCommands.BotSetCommand, case_sensitive=True)
+        & CustomFilters.sudo,
     )
 )
 bot.add_handler(

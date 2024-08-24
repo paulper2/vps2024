@@ -2,14 +2,15 @@ from pyrogram.filters import command
 from pyrogram.handlers import MessageHandler
 
 from bot import user_data, DATABASE_URL, bot
-from bot.helper.ext_utils.bot_utils import update_user_ldata
+from bot.helper.ext_utils.bot_utils import update_user_ldata, new_task
 from bot.helper.ext_utils.db_handler import DbManager
 from bot.helper.telegram_helper.bot_commands import BotCommands
 from bot.helper.telegram_helper.filters import CustomFilters
 from bot.helper.telegram_helper.message_utils import sendMessage
 
 
-async def authorize(client, message):
+@new_task
+async def authorize(_, message):
     msg = message.text.split()
     if len(msg) > 1:
         id_ = int(msg[1].strip())
@@ -27,7 +28,8 @@ async def authorize(client, message):
     await sendMessage(message, msg)
 
 
-async def unauthorize(client, message):
+@new_task
+async def unauthorize(_, message):
     msg = message.text.split()
     if len(msg) > 1:
         id_ = int(msg[1].strip())
@@ -45,7 +47,8 @@ async def unauthorize(client, message):
     await sendMessage(message, msg)
 
 
-async def addSudo(client, message):
+@new_task
+async def addSudo(_, message):
     id_ = ""
     msg = message.text.split()
     if len(msg) > 1:
@@ -65,7 +68,8 @@ async def addSudo(client, message):
     await sendMessage(message, msg)
 
 
-async def removeSudo(client, message):
+@new_task
+async def removeSudo(_, message):
     id_ = ""
     msg = message.text.split()
     if len(msg) > 1:
@@ -84,22 +88,29 @@ async def removeSudo(client, message):
 
 bot.add_handler(
     MessageHandler(
-        authorize, filters=command(BotCommands.AuthorizeCommand) & CustomFilters.sudo
+        authorize,
+        filters=command(BotCommands.AuthorizeCommand, case_sensitive=True)
+        & CustomFilters.sudo,
     )
 )
 bot.add_handler(
     MessageHandler(
         unauthorize,
-        filters=command(BotCommands.UnAuthorizeCommand) & CustomFilters.sudo,
+        filters=command(BotCommands.UnAuthorizeCommand, case_sensitive=True)
+        & CustomFilters.sudo,
     )
 )
 bot.add_handler(
     MessageHandler(
-        addSudo, filters=command(BotCommands.AddSudoCommand) & CustomFilters.sudo
+        addSudo,
+        filters=command(BotCommands.AddSudoCommand, case_sensitive=True)
+        & CustomFilters.sudo,
     )
 )
 bot.add_handler(
     MessageHandler(
-        removeSudo, filters=command(BotCommands.RmSudoCommand) & CustomFilters.sudo
+        removeSudo,
+        filters=command(BotCommands.RmSudoCommand, case_sensitive=True)
+        & CustomFilters.sudo,
     )
 )

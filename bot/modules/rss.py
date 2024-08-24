@@ -10,7 +10,7 @@ from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 from time import time
 
 from bot import scheduler, rss_dict, LOGGER, DATABASE_URL, config_dict, bot
-from bot.helper.ext_utils.bot_utils import new_thread, arg_parser
+from bot.helper.ext_utils.bot_utils import new_task, arg_parser
 from bot.helper.ext_utils.db_handler import DbManager
 from bot.helper.ext_utils.exceptions import RssShutdownException
 from bot.helper.ext_utils.help_messages import RSS_HELP_MESSAGE
@@ -60,11 +60,13 @@ async def updateRssMenu(query):
     await editMessage(query.message, msg, button)
 
 
+@new_task
 async def getRssMenu(_, message):
     msg, button = await rssMenu(message)
     await sendMessage(message, msg, button)
 
 
+@new_task
 async def rssSub(_, message, pre_event):
     user_id = message.from_user.id
     handler_dict[user_id] = False
@@ -200,6 +202,7 @@ async def getUserId(title):
         )
 
 
+@new_task
 async def rssUpdate(_, message, pre_event, state):
     user_id = message.from_user.id
     handler_dict[user_id] = False
@@ -302,6 +305,7 @@ async def rssList(query, start, all_users=False):
     await editMessage(query.message, list_feed, button)
 
 
+@new_task
 async def rssGet(_, message, pre_event):
     user_id = message.from_user.id
     handler_dict[user_id] = False
@@ -358,6 +362,7 @@ async def rssGet(_, message, pre_event):
     await updateRssMenu(pre_event)
 
 
+@new_task
 async def rssEdit(_, message, pre_event):
     user_id = message.from_user.id
     handler_dict[user_id] = False
@@ -411,6 +416,7 @@ async def rssEdit(_, message, pre_event):
     await updateRssMenu(pre_event)
 
 
+@new_task
 async def rssDelete(_, message, pre_event):
     handler_dict[message.from_user.id] = False
     users = message.text.split()
@@ -443,7 +449,7 @@ async def event_handler(client, query, pfunc):
     client.remove_handler(*handler)
 
 
-@new_thread
+@new_task
 async def rssListener(client, query):
     user_id = query.from_user.id
     message = query.message
@@ -769,7 +775,9 @@ addJob()
 scheduler.start()
 bot.add_handler(
     MessageHandler(
-        getRssMenu, filters=command(BotCommands.RssCommand) & CustomFilters.authorized
+        getRssMenu,
+        filters=command(BotCommands.RssCommand, case_sensitive=True)
+        & CustomFilters.authorized,
     )
 )
 bot.add_handler(CallbackQueryHandler(rssListener, filters=regex("^rss")))
