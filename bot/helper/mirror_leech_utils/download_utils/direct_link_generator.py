@@ -135,6 +135,10 @@ def direct_link_generator(link):
             "gibibox.com",
             "goaibox.com",
             "terasharelink.com",
+            "teraboxlink.com",
+            "freeterabox.com",
+            "1024terabox.com",
+            "teraboxshare.com"
         ]
     ):
         return terabox(link)
