@@ -84,6 +84,7 @@ class TaskConfig:
         self.name = ""
         self.new_dir = ""
         self.name_sub = ""
+        self.thumbnail_layout = ""
         self.split_size = 0
         self.max_split_size = 0
         self.multi = 0
@@ -110,12 +111,13 @@ class TaskConfig:
         self.convert_audio = False
         self.convert_video = False
         self.screen_shots = False
-        self.as_doc = False
         self.is_cancelled = False
         self.force_run = False
         self.force_download = False
         self.force_upload = False
         self.is_torrent = False
+        self.as_med = False
+        self.as_doc = False
         self.chat_thread_id = None
         self.suproc = None
         self.thumb = None
@@ -356,10 +358,21 @@ class TaskConfig:
             )
             self.split_size = min(self.split_size, self.max_split_size)
 
-            self.as_doc = (
-                self.user_dict.get("as_doc", False)
-                or config_dict["AS_DOCUMENT"]
-                and "as_doc" not in self.user_dict
+            if not self.as_doc:
+                self.as_doc = not self.as_med if self.as_med else (
+                    self.user_dict.get("as_doc", False)
+                    or config_dict["AS_DOCUMENT"]
+                    and "as_doc" not in self.user_dict
+                )
+
+            self.thumbnail_layout = (
+                self.thumbnail_layout
+                or self.user_dict.get("thumb_layout", False)
+                or (
+                    config_dict["THUMBNAIL_LAYOUT"]
+                    if "thumb_layout" not in self.user_dict
+                    else ""
+                )
             )
 
             if is_telegram_link(self.thumb):
