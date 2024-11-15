@@ -19,7 +19,6 @@ motor
 natsort
 pillow
 psutil
-pycryptodome
 pymongo
 pyrofork
 python-dotenv
@@ -32,4 +31,4 @@ tgcrypto
 urllib3
 uvloop
 xattr
-yt-dlp
+yt-dlp[default]

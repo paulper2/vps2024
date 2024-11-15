@@ -4,7 +4,7 @@ from re import search as re_search
 from secrets import token_urlsafe
 from yt_dlp import YoutubeDL, DownloadError
 
-from bot import task_dict_lock, task_dict, non_queued_dl, queue_dict_lock
+from bot import task_dict_lock, task_dict
 from ...ext_utils.bot_utils import sync_to_async, async_to_sync
 from ...ext_utils.task_manager import check_running_tasks, stop_duplicate_check
 from ...mirror_leech_utils.status_utils.queue_status import QueueStatus
@@ -49,7 +49,6 @@ class YoutubeDLHelper:
         self._eta = "-"
         self._listener = listener
         self._gid = ""
-        self._downloading = False
         self._ext = ""
         self.is_playlist = False
         self.opts = {
@@ -93,7 +92,6 @@ class YoutubeDLHelper:
         return self._eta
 
     def _on_download_progress(self, d):
-        self._downloading = True
         if self._listener.is_cancelled:
             raise ValueError("Cancelling...")
         if d["status"] == "finished":
@@ -182,7 +180,7 @@ class YoutubeDLHelper:
                 )
                 return
             if self._listener.is_cancelled:
-                raise ValueError
+                return
             async_to_sync(self._listener.on_download_complete)
         except ValueError:
             self._on_download_error("Download Stopped by User!")
@@ -247,6 +245,11 @@ class YoutubeDLHelper:
             self.opts["outtmpl"] = {
                 "default": f"{path}/{self._listener.name}/%(title,fulltitle,alt_title)s%(season_number& |)s%(season_number&S|)s%(season_number|)02d%(episode_number&E|)s%(episode_number|)02d%(height& |)s%(height|)s%(height&p|)s%(fps|)s%(fps&fps|)s%(tbr& |)s%(tbr|)d.%(ext)s",
                 "thumbnail": f"{path}/yt-dlp-thumb/%(title,fulltitle,alt_title)s%(season_number& |)s%(season_number&S|)s%(season_number|)02d%(episode_number&E|)s%(episode_number|)02d%(height& |)s%(height|)s%(height&p|)s%(fps|)s%(fps&fps|)s%(tbr& |)s%(tbr|)d.%(ext)s",
+            }
+        elif "download_ranges" in options:
+            self.opts["outtmpl"] = {
+                "default": f"{path}/{base_name}/%(section_number|)s%(section_number&.|)s%(section_title|)s%(section_title&-|)s%(title,fulltitle,alt_title)s %(section_start)s to %(section_end)s.%(ext)s",
+                "thumbnail": f"{path}/yt-dlp-thumb/%(section_number|)s%(section_number&.|)s%(section_title|)s%(section_title&-|)s%(title,fulltitle,alt_title)s %(section_start)s to %(section_end)s.%(ext)s",
             }
         elif any(
             key in options
@@ -320,8 +323,6 @@ class YoutubeDLHelper:
             await event.wait()
             if self._listener.is_cancelled:
                 return
-            async with queue_dict_lock:
-                non_queued_dl.add(self._listener.mid)
             LOGGER.info(f"Start Queued Download from YT_DLP: {self._listener.name}")
             await self._on_download_start(True)
 
@@ -333,8 +334,7 @@ class YoutubeDLHelper:
     async def cancel_task(self):
         self._listener.is_cancelled = True
         LOGGER.info(f"Cancelling Download: {self._listener.name}")
-        if not self._downloading:
-            await self._listener.on_download_error("Download Cancelled by User!")
+        await self._listener.on_download_error("Download Cancelled by User!")
 
     def _set_options(self, options):
         options = options.split("|")
@@ -357,5 +357,8 @@ class YoutubeDLHelper:
                     self.opts[key].extend(tuple(value))
                 elif isinstance(value, dict):
                     self.opts[key].append(value)
+            elif key == "download_ranges":
+                if isinstance(value, list):
+                    self.opts[key] = lambda info, ytdl: value
             else:
                 self.opts[key] = value

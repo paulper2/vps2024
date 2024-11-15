@@ -29,8 +29,6 @@ def direct_link_generator(link):
     domain = urlparse(link).hostname
     if not domain:
         raise DirectDownloadLinkException("ERROR: Invalid URL")
-    if "youtube.com" in domain or "youtu.be" in domain:
-        raise DirectDownloadLinkException("ERROR: Use ytdl cmds for Youtube links")
     elif "yadi.sk" in link or "disk.yandex." in link:
         return yandex_disk(link)
     elif "mediafire.com" in domain:
@@ -138,7 +136,7 @@ def direct_link_generator(link):
             "teraboxlink.com",
             "freeterabox.com",
             "1024terabox.com",
-            "teraboxshare.com"
+            "teraboxshare.com",
         ]
     ):
         return terabox(link)
@@ -231,8 +229,17 @@ def mediafire(url, session=None):
         r"https?:\/\/download\d+\.mediafire\.com\/\S+\/\S+\/\S+", url
     ):
         return final_link[0]
+
+    def _repair_download(url, session):
+        try:
+            html = HTML(session.get(url).text)
+            if new_link := html.xpath('//a[@id="continue-btn"]/@href'):
+                return mediafire(f"https://mediafire.com/{new_link[0]}")
+        except Exception as e:
+            raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
+
     if session is None:
-        session = Session()
+        session = create_scraper()
         parsed_url = urlparse(url)
         url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
     try:
@@ -257,8 +264,9 @@ def mediafire(url, session=None):
         if html.xpath("//div[@class='passwordPrompt']"):
             session.close()
             raise DirectDownloadLinkException("ERROR: Wrong password.")
-    if not (final_link := html.xpath("//a[@id='downloadButton']/@href")):
-        session.close()
+    if not (final_link := html.xpath('//a[@aria-label="Download file"]/@href')):
+        if repair_link := html.xpath("//a[@class='retry']/@href"):
+            return _repair_download(repair_link[0], session)
         raise DirectDownloadLinkException(
             "ERROR: No links found in this page Try Again"
         )
@@ -1045,7 +1053,7 @@ def mediafireFolder(url):
         folderkey = folderkey[0]
     details = {"contents": [], "title": "", "total_size": 0, "header": ""}
 
-    session = Session()
+    session = create_scraper()
     adapter = HTTPAdapter(
         max_retries=Retry(total=10, read=10, connect=10, backoff_factor=0.3)
     )
@@ -1092,6 +1100,18 @@ def mediafireFolder(url):
     details["title"] = folder_infos[0]["name"]
 
     def __scraper(url):
+        session = create_scraper()
+        parsed_url = urlparse(url)
+        url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+
+        def __repair_download(url):
+            try:
+                html = HTML(session.get(url).text)
+                if new_link := html.xpath('//a[@id="continue-btn"]/@href'):
+                    return __scraper(f"https://mediafire.com/{new_link[0]}")
+            except:
+                return
+
         try:
             html = HTML(session.get(url).text)
         except:
@@ -1107,8 +1127,12 @@ def mediafireFolder(url):
                 return
             if html.xpath("//div[@class='passwordPrompt']"):
                 return
-        if final_link := html.xpath("//a[@id='downloadButton']/@href"):
+        if final_link := html.xpath('//a[@aria-label="Download file"]/@href'):
+            if final_link[0].startswith("//"):
+                return __scraper(f"https://{final_link[0][2:]}")
             return final_link[0]
+        if repair_link := html.xpath("//a[@class='retry']/@href"):
+            return __repair_download(repair_link[0])
 
     def __get_content(folderKey, folderPath="", content_type="folders"):
         try:
