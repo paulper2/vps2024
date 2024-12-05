@@ -173,6 +173,16 @@ class TaskListener(TaskConfig):
             up_dir, self.name = up_path.rsplit("/", 1)
             self.size = await get_path_size(up_dir)
 
+        if self.ffmpeg_cmds:
+            up_path = await self.proceed_ffmpeg(
+                up_path,
+                gid,
+            )
+            if self.is_cancelled:
+                return
+            up_dir, self.name = up_path.rsplit("/", 1)
+            self.size = await get_path_size(up_dir)
+
         if self.name_sub:
             up_path = await self.substitute(up_path)
             if self.is_cancelled:
@@ -188,7 +198,11 @@ class TaskListener(TaskConfig):
 
         if self.convert_audio or self.convert_video:
             up_path = await self.convert_media(
-                up_path, gid, unwanted_files, unwanted_files_size, files_to_delete
+                up_path,
+                gid,
+                unwanted_files,
+                unwanted_files_size,
+                files_to_delete,
             )
             if self.is_cancelled:
                 return
