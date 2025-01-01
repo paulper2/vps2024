@@ -312,6 +312,7 @@
             display: flex;
             flex-direction: column;
             flex-grow: 1;
+            min-width: 0;
         }
 
         .file-info-row {
@@ -340,6 +341,12 @@
             justify-content: center;
             width: 40px;
         }
+
+        .file-name {
+            word-break: break-word;
+            max-width: 100%;
+            overflow-wrap: break-word;
+        }
     </style>
 </head>
 
@@ -347,8 +354,8 @@
     <header>
         <div class="container mx-auto px-4">
             <div class="flex flex-col sm:flex-row justify-between items-center">
-                <h1 class="text-3xl font-bold text-white mb-4 sm:mb-0">Torrent
-                    file selector</h1>
+                <h1 class="text-3xl font-bold text-white mb-4 sm:mb-0">🗂 Torrent
+                    File Selector</h1>
                 <div class="flex items-center space-x-4">
                     <div class="flex items-center">
                         <span id="themeIcon" class="mr-2 text-white">🌙</span>
@@ -372,10 +379,20 @@
         </div>
 
         <div id="fileManager" class="card p-6 hidden">
-            <div class="flex justify-between items-center mb-4">
-                <button id="selectAllBtn" class="btn btn-primary">Select
-                    All</button>
-                <button id="submitBtn" class="btn btn-primary">Submit</button>
+            <div class="flex flex-wrap justify-between items-start mb-4">
+                <div class="flex flex-col items-center mr-2 mb-2">
+                    <button id="selectAllBtn" class="btn btn-primary">Select All</button>
+                    <span class="text-xs mt-1">in this folder</span>
+                </div>
+                <div class="flex flex-col items-center mr-2 mb-2">
+                    <button id="invertSelectionBtn" class="btn btn-primary">Invert Selection</button>
+                    <span class="text-xs mt-1">in this folder</span>
+                </div>
+                <div class="flex flex-col items-center mr-2 mb-2">
+                    <button id="selectEverythingBtn" class="btn btn-primary">Select Everything</button>
+                    <span class="text-xs mt-1">all files</span>
+                </div>
+                <button id="submitBtn" class="btn btn-primary mb-2">Submit</button>
             </div>
             <div class="mb-4">
                 <p>Selected files: <span id="selectedCount">0</span> / <span id="totalCount">0</span></p>
@@ -388,7 +405,7 @@
     <footer>
         <div class="container mx-auto px-4">
             <div class="footer-content flex flex-col sm:flex-row justify-between items-center">
-                <p class="text-white mb-4 sm:mb-0">&copy; 2024 Torrent file selector.
+                <p class="text-white mb-4 sm:mb-0">&copy; 2024 Torrent File Selector.
                     All rights reserved.</p>
                 <div class="footer-buttons flex space-x-4">
                     <a href="https://github.com/anasty17/mirror-leech-telegram-bot" target="_blank"
@@ -566,10 +583,18 @@
                     } else if (areSomeChildrenSelected(node)) {
                         checkbox.indeterminate = true;
                     }
+                    if (allowEdit) {
+                        const editBtn = document.createElement('span');
+                        editBtn.textContent = ' | Edit ✏️';
+                        editBtn.className = 'edit-btn';
+                        sizeInfo.appendChild(editBtn);
+                    }
                 }
 
                 fileTree.appendChild(div);
             });
+            updateSelectAllButtonText();
+            updateSelectEverythingButtonText();
         }
 
         function areAllChildrenSelected(folder) {
@@ -682,19 +707,77 @@
 
         function selectAll() {
             const nodes = currentFolder ? currentFolder.children : files;
+            const allSelected = nodes.every(node => node.type === 'folder' ? areAllChildrenSelected(node) : node.selected);
             nodes.forEach(node => {
                 if (node.type === 'folder') {
-                    toggleFolder(node, true);
+                    toggleFolder(node, !allSelected);
                 } else {
-                    node.selected = true;
+                    node.selected = !allSelected;
+                }
+            });
+            updateStats();
+            renderFileTree(nodes);
+            updateSelectAllButtonText();
+        }
+
+        function invertSelection() {
+            const nodes = currentFolder ? currentFolder.children : files;
+            nodes.forEach(node => {
+                if (node.type === 'folder') {
+                    invertFolderSelection(node);
+                } else {
+                    node.selected = !node.selected;
                 }
             });
             updateStats();
             renderFileTree(nodes);
         }
 
+        function invertFolderSelection(folder) {
+            folder.selected = !folder.selected;
+            if (folder.children) {
+                folder.children.forEach(child => {
+                    if (child.type === 'folder') {
+                        invertFolderSelection(child);
+                    } else {
+                        child.selected = !child.selected;
+                    }
+                });
+            }
+        }
+
+        function selectEverything() {
+            const allSelected = files.every(node => node.type === 'folder' ? areAllChildrenSelected(node) : node.selected);
+            function recursiveSelect(nodes, select) {
+                nodes.forEach(node => {
+                    if (node.type === 'folder') {
+                        node.selected = select;
+                        if (node.children) {
+                            recursiveSelect(node.children, select);
+                        }
+                    } else {
+                        node.selected = select;
+                    }
+                });
+            }
+            recursiveSelect(files, !allSelected);
+            updateStats();
+            renderFileTree(currentFolder ? currentFolder.children : files);
+            updateSelectEverythingButtonText();
+        }
+
+        function getFullPath(node) {
+            const path = [];
+            let currentNode = findParent(files[0], node.id);
+            while (currentNode) {
+                path.unshift(currentNode.name);
+                currentNode = findParent(files[0], currentNode.id);
+            }
+            return path.length > 0 ? path.join('/') : '';
+        }
+
         function openEditFileNameModal(node) {
-            modalTitle.textContent = 'Edit File Name';
+            modalTitle.textContent = `Edit ${node.type === 'folder' ? 'Folder' : 'File'} Name`;
             modalBody.innerHTML = `
                 <input type="text" id="editNameInput" class="edit-name-input" value="${node.name}">
             `;
@@ -707,12 +790,33 @@
             const editNameInput = document.getElementById('editNameInput');
 
             saveNameBtn.addEventListener('click', () => {
+                closeModal();
                 const newName = editNameInput.value.trim();
                 if (newName && newName !== node.name) {
-                    node.name = newName;
-                    renderFileTree(currentFolder ? currentFolder.children : files);
+                    const fullPath = getFullPath(node);
+                    const requestUrl = `/app/files/torrent?gid=${urlParams.gid}&pin=${pinInput.value}&mode=rename`;
+                    const body = {
+                        old_path: fullPath ? `${fullPath}/${node.name}` : node.name,
+                        new_path: fullPath ? `${fullPath}/${newName}` : newName,
+                        type: node.type,
+                    };
+                    fetch(requestUrl, {
+                        'method': 'POST',
+                        'body': JSON.stringify(body),
+                    }).then(response => {
+                        if (response.ok) {
+                            modalTitle.textContent = 'Success!';
+                            modalBody.innerHTML = '<p>Your Rename has been submitted successfully.</p>';
+                            node.name = newName;
+                            renderFileTree(currentFolder ? currentFolder.children : files);
+                        } else {
+                            modalTitle.textContent = 'Error';
+                            modalBody.innerHTML = '<p>There was an error submitting your Rename. Try Again!.</p>';
+                        }
+                        modalFooter.innerHTML = '<button class="btn btn-primary" onclick="closeModal()">Okay</button>';
+                        openModal();
+                    });
                 }
-                closeModal();
             });
 
             editNameInput.addEventListener('keypress', (e) => {
@@ -743,10 +847,10 @@
                 return;
             }
             modalTitle.textContent = 'Processing...';
-            modalBody.innerHTML = `<p>Submitting your selection ${selectedCount.innerText} ... </p>`;
+            modalBody.innerHTML = `<p>Submitting, ${selectedCount.innerText} file(s)... </p>`;
             modalFooter.innerHTML = '';
             openModal();
-            const requestUrl = `/app/files/torrent?gid=${urlParams.gid}&pin=${pinInput.value}`;
+            const requestUrl = `/app/files/torrent?gid=${urlParams.gid}&pin=${pinInput.value}&mode=selection`;
             fetch(requestUrl, { 'method': 'POST', 'body': JSON.stringify(files) }).then(response => {
                 if (reusableModal.style.display === 'block') {
                     closeModal();
@@ -756,7 +860,7 @@
                     modalBody.innerHTML = '<p>Your selection has been submitted successfully.</p>';
                 } else {
                     modalTitle.textContent = 'Error';
-                    modalBody.innerHTML = '<p>There was an error submitting your selection. Please try again.</p>';
+                    modalBody.innerHTML = '<p>An error occurred while submitting your selection. Try Again!</p>';
                 }
                 modalFooter.innerHTML = '<button class="btn btn-primary" onclick="closeModal()">Okay</button>';
                 openModal();
@@ -785,13 +889,13 @@
                 openModal();
                 return false;
             }
-            const requestUrl = `/app/files/torrent?gid=${urlParams.gid}&pin=${pinInput.value}`;
+            const requestUrl = `/app/files/torrent?gid=${urlParams.gid}&pin=${pinInput.value}&mode=get`;
             fetch(requestUrl).then(function (response) {
                 if (response.ok) {
                     return response.json().then(data => {
                         if (data.error) {
                             modalTitle.textContent = data.error;
-                            modalBody.innerHTML = `<p>${data.message}. Please try again.</p>`;
+                            modalBody.innerHTML = `<p>${data.message}. Try Again!</p>`;
                             modalFooter.innerHTML = '<button class="btn btn-primary" onclick="closeModal()">Retry</button>';
                             openModal();
                         } else {
@@ -803,30 +907,52 @@
                                 fileManager.classList.remove('hidden');
                                 renderFileTree(files);
                                 updateStats();
+                                updateSelectAllButtonText();
+                                updateSelectEverythingButtonText();
                             }, 500)
                         }
                     });
                 } else {
-                    modalTitle.textContent = 'Something Went Wrong';
-                    modalBody.innerHTML = '<p>Please check console. Status Code: ' + response.status + '</p>';
+                    modalTitle.textContent = 'Something Went Wrong!';
+                    modalBody.innerHTML = '<p>Check console. Status Code: ' + response.status + '</p>';
                     modalFooter.innerHTML = '<button class="btn btn-primary" onclick="closeModal()">Retry</button>';
                     openModal();
                 }
             }).catch(error => {
                 modalTitle.textContent = 'Server Error';
-                modalBody.innerHTML = '<p>There was an error connecting to the server. Please try again.</p><br>' + error.message;
+                modalBody.innerHTML = '<p>There was an error connecting to the server. Try Again!</p><br>' + error.message;
                 modalFooter.innerHTML = '<button class="btn btn-primary" onclick="closeModal()">Retry</button>';
                 openModal();
             });
         });
         themeToggle.addEventListener('change', toggleTheme);
+        const invertSelectionBtn = document.getElementById('invertSelectionBtn');
+        const selectEverythingBtn = document.getElementById('selectEverythingBtn');
+
+        invertSelectionBtn.addEventListener('click', invertSelection);
+        selectEverythingBtn.addEventListener('click', selectEverything);
+
         selectAllBtn.addEventListener('click', selectAll);
+        selectEverythingBtn.addEventListener('click', selectEverything);
         submitBtn.addEventListener('click', submitData);
+
         reusableModal.addEventListener('click', (event) => {
             if (event.target === reusableModal) {
                 event.stopPropagation();
             }
         });
+
+        function updateSelectAllButtonText() {
+            const nodes = currentFolder ? currentFolder.children : files;
+            const allSelected = nodes.every(node => node.type === 'folder' ? areAllChildrenSelected(node) : node.selected);
+            selectAllBtn.textContent = allSelected ? 'Deselect All' : 'Select All';
+        }
+
+        function updateSelectEverythingButtonText() {
+            const allSelected = selectedCount === totalCount;
+            selectEverythingBtn.textContent = allSelected ? 'Deselect Everything' : 'Select Everything';
+        }
+
         loadThemePreference();
     </script>
 </body>

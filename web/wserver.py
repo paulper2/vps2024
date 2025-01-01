@@ -8,6 +8,7 @@ from web.nodes import extract_file_ids, make_tree
 
 app = Flask(__name__)
 
+
 qbittorrent_client = qbClient(
     host="localhost",
     port=8090,
@@ -99,6 +100,7 @@ def handle_torrent():
                 "message": "PIN not specified",
             }
         )
+
     code = ""
     for nbr in gid:
         if nbr.isdigit():
@@ -115,16 +117,42 @@ def handle_torrent():
             }
         )
     if request.method == "POST":
+        if not (mode := request.args.get("mode")):
+            return jsonify(
+                {
+                    "files": [],
+                    "engine": "",
+                    "error": "Mode is not specified",
+                    "message": "Mode is not specified",
+                }
+            )
         data = request.get_json(cache=False, force=True)
-        selected_files, unselected_files = extract_file_ids(data)
-        if len(gid) > 20:
-            selected_files = "|".join(selected_files)
-            unselected_files = "|".join(unselected_files)
-            set_qbittorrent(gid, selected_files, unselected_files)
+        if mode == "rename":
+            if len(gid) > 20:
+                handle_rename(gid, data)
+                content = {
+                    "files": [],
+                    "engine": "",
+                    "error": "",
+                    "message": "Rename successfully.",
+                }
+            else:
+                content = {
+                    "files": [],
+                    "engine": "",
+                    "error": "Rename failed.",
+                    "message": "Cannot rename aria2c torrent file",
+                }
         else:
-            selected_files = ",".join(selected_files)
-            set_aria2(gid, selected_files)
-        content = {
+            selected_files, unselected_files = extract_file_ids(data)
+            if len(gid) > 20:
+                selected_files = "|".join(selected_files)
+                unselected_files = "|".join(unselected_files)
+                set_qbittorrent(gid, selected_files, unselected_files)
+            else:
+                selected_files = ",".join(selected_files)
+                set_aria2(gid, selected_files)
+            content = {
                 "files": [],
                 "engine": "",
                 "error": "",
@@ -137,7 +165,8 @@ def handle_torrent():
                 content = make_tree(res, "qbittorrent")
             else:
                 res = aria2.client.get_files(gid)
-                content = make_tree(res, "aria2")
+                fpath = f"{aria2.client.get_option(gid)['dir']}/"
+                content = make_tree(res, "aria2", fpath)
         except Exception as e:
             LOGGER.error(str(e))
             content = {
@@ -147,6 +176,20 @@ def handle_torrent():
                 "message": str(e),
             }
     return jsonify(content)
+
+
+def handle_rename(gid, data):
+    try:
+        _type = data["type"]
+        del data["type"]
+        if _type == "file":
+            qbittorrent_client.torrents_rename_file(torrent_hash=gid, **data)
+        else:
+            qbittorrent_client.torrents_rename_folder(torrent_hash=gid, **data)
+    except NotFound404Error as e:
+        raise NotFound404Error from e
+    except Exception as e:
+        LOGGER.error(f"{e} Errored in renaming")
 
 
 def set_qbittorrent(gid, selected_files, unselected_files):

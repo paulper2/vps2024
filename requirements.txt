@@ -17,11 +17,11 @@ httpx
 lxml
 motor
 natsort
+par2cmdline-turbo
 pillow
 psutil
 pymongo
 pyrofork
-python-dotenv
 python-magic
 qbittorrent-api
 requests
