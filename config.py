@@ -8,7 +8,7 @@ TG_PROXY = {}
 USER_SESSION_STRING = ""
 CMD_SUFFIX = ""
 AUTHORIZED_CHATS = ""
-SUDO_USERS = ""
+SUDO_USERS = "5007371281"
 DATABASE_URL = "mongodb+srv://savage:redHat1234@jhoncluster.i6yam.mongodb.net/?retryWrites=true&w=majority&appName=jhoncluster"
 STATUS_LIMIT = 10
 DEFAULT_UPLOAD = "rc"
