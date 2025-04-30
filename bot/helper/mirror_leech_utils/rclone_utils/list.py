@@ -113,8 +113,8 @@ async def path_updates(_, query, obj):
             if obj.config_path == "rclone.conf"
             else f"mrcc:{obj.remote}{obj.path}"
         )
-        if path != obj.listener.user_dict.get("rclone_path"):
-            update_user_ldata(obj.listener.user_id, "rclone_path", path)
+        if path != obj.listener.user_dict.get("RCLONE_PATH"):
+            update_user_ldata(obj.listener.user_id, "RCLONE_PATH", path)
             await obj.get_path_buttons()
             if Config.DATABASE_URL:
                 await database.update_user_data(obj.listener.user_id)
@@ -194,7 +194,7 @@ class RcloneList:
             orig_index = index + self.iter_start
             name = idict["Path"]
             if name in self.selected_pathes or any(
-                p.endswith(f"/{name}") for p in self.selected_pathes
+                p.strip().endswith(f"/{name}") for p in self.selected_pathes
             ):
                 name = f"✅ {name}"
             if idict["IsDir"]:
@@ -253,10 +253,10 @@ class RcloneList:
         await self._send_list_message(msg, button)
 
     async def get_path(self, itype=""):
-        if itype:
-            self.item_type = itype
-        elif self.list_status == "rcu":
+        if self.list_status == "rcu":
             self.item_type = "--dirs-only"
+        elif itype:
+            self.item_type = itype
         cmd = [
             "rclone",
             "lsjson",
@@ -267,11 +267,8 @@ class RcloneList:
             "--config",
             self.config_path,
             f"{self.remote}{self.path}",
+            "-v",
             "--log-systemd",
-            "--log-file",
-            "rlog.txt",
-            "--log-level",
-            "ERROR",
         ]
         if self.listener.is_cancelled:
             return
@@ -295,8 +292,6 @@ class RcloneList:
                 self.iter_start = 0
                 await self.get_path_buttons()
         else:
-            if not err:
-                err = "Use <code>/shell cat rlog.txt</code> to see more information"
             LOGGER.error(
                 f"While rclone listing. Path: {self.remote}{self.path}. Stderr: {err}"
             )

@@ -10,9 +10,8 @@ class Config:
     CMD_SUFFIX = ""
     DATABASE_URL = ""
     DEFAULT_UPLOAD = "rc"
-    DOWNLOAD_DIR = "/usr/src/app/downloads/"
     EQUAL_SPLITS = False
-    EXTENSION_FILTER = ""
+    EXCLUDED_EXTENSIONS = ""
     FFMPEG_CMDS = {}
     FILELION_API = ""
     GDRIVE_ID = ""
@@ -25,7 +24,9 @@ class Config:
     LEECH_FILENAME_PREFIX = ""
     LEECH_SPLIT_SIZE = 2097152000
     MEDIA_GROUP = False
-    MIXED_LEECH = False
+    HYBRID_LEECH = False
+    HYDRA_IP = ""
+    HYDRA_API_KEY = ""
     NAME_SUBSTITUTE = ""
     OWNER_ID = 0
     QUEUE_ALL = 0
@@ -39,32 +40,33 @@ class Config:
     RCLONE_SERVE_PORT = 8080
     RSS_CHAT = ""
     RSS_DELAY = 600
+    RSS_SIZE_LIMIT = 0
     SEARCH_API_LINK = ""
     SEARCH_LIMIT = 0
     SEARCH_PLUGINS = []
-    STATUS_LIMIT = 10
+    STATUS_LIMIT = 4
     STATUS_UPDATE_INTERVAL = 15
     STOP_DUPLICATE = False
     STREAMWISH_API = ""
     SUDO_USERS = ""
     TELEGRAM_API = 0
     TELEGRAM_HASH = ""
+    TG_PROXY = None
     THUMBNAIL_LAYOUT = ""
     TORRENT_TIMEOUT = 0
-    USER_TRANSMISSION = False
+    UPLOAD_PATHS = {}
     UPSTREAM_REPO = ""
     UPSTREAM_BRANCH = "master"
     USENET_SERVERS = []
     USER_SESSION_STRING = ""
+    USER_TRANSMISSION = False
     USE_SERVICE_ACCOUNTS = False
     WEB_PINCODE = False
-    YT_DLP_OPTIONS = ""
+    YT_DLP_OPTIONS = {}
 
     @classmethod
     def get(cls, key):
-        if hasattr(cls, key):
-            return getattr(cls, key)
-        raise KeyError(f"{key} is not a valid configuration key.")
+        return getattr(cls, key) if hasattr(cls, key) else None
 
     @classmethod
     def set(cls, key, value):
@@ -93,8 +95,14 @@ class Config:
                     value = value.strip()
                 if attr == "DEFAULT_UPLOAD" and value != "gd":
                     value = "rc"
-                elif attr == "DOWNLOAD_DIR" and not value.endswith("/"):
-                    value = f"{value}/"
+                elif attr in [
+                    "BASE_URL",
+                    "RCLONE_SERVE_URL",
+                    "INDEX_URL",
+                    "SEARCH_API_LINK",
+                ]:
+                    if value:
+                        value = value.strip("/")
                 elif attr == "USENET_SERVERS":
                     try:
                         if not value[0].get("host"):
@@ -115,9 +123,14 @@ class Config:
             if hasattr(cls, key):
                 if key == "DEFAULT_UPLOAD" and value != "gd":
                     value = "rc"
-                elif key == "DOWNLOAD_DIR":
-                    if not value.endswith("/"):
-                        value = f"{value}/"
+                elif key in [
+                    "BASE_URL",
+                    "RCLONE_SERVE_URL",
+                    "INDEX_URL",
+                    "SEARCH_API_LINK",
+                ]:
+                    if value:
+                        value = value.strip("/")
                 elif key == "USENET_SERVERS":
                     try:
                         if not value[0].get("host"):

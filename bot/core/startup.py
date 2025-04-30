@@ -2,6 +2,7 @@ from aiofiles.os import path as aiopath, remove, makedirs
 from aiofiles import open as aiopen
 from aioshutil import rmtree
 from asyncio import create_subprocess_exec, create_subprocess_shell
+from importlib import import_module
 
 from .. import (
     aria2_options,
@@ -11,36 +12,41 @@ from .. import (
     drives_names,
     index_urls,
     user_data,
-    extension_filter,
+    excluded_extensions,
     LOGGER,
     rss_dict,
-    qbittorrent_client,
     sabnzbd_client,
-    aria2,
+    auth_chats,
+    sudo_users,
 )
 from ..helper.ext_utils.db_handler import database
 from .config_manager import Config
 from .mltb_client import TgClient
+from .torrent_manager import TorrentManager
 
 
-def update_qb_options():
+async def update_qb_options():
     if not qbit_options:
-        qbit_options.update(dict(qbittorrent_client.app_preferences()))
+        opt = await TorrentManager.qbittorrent.app.preferences()
+        qbit_options.update(opt)
         del qbit_options["listen_port"]
         for k in list(qbit_options.keys()):
             if k.startswith("rss"):
                 del qbit_options[k]
         qbit_options["web_ui_password"] = "mltbmltb"
-        qbittorrent_client.app_set_preferences({"web_ui_password": "mltbmltb"})
+        await TorrentManager.qbittorrent.app.set_preferences(
+            {"web_ui_password": "mltbmltb"}
+        )
     else:
-        qbittorrent_client.app_set_preferences(qbit_options)
+        await TorrentManager.qbittorrent.app.set_preferences(qbit_options)
 
 
-def update_aria2_options():
+async def update_aria2_options():
     if not aria2_options:
-        aria2_options.update(aria2.client.get_global_option())
+        op = await TorrentManager.aria2.getGlobalOption()
+        aria2_options.update(op)
     else:
-        aria2.set_global_options(aria2_options)
+        await TorrentManager.aria2.changeGlobalOption(aria2_options)
 
 
 async def update_nzb_options():
@@ -51,18 +57,27 @@ async def update_nzb_options():
 async def load_settings():
     if not Config.DATABASE_URL:
         return
+    for p in ["thumbnails", "tokens", "rclone"]:
+        if await aiopath.exists(p):
+            await rmtree(p, ignore_errors=True)
     await database.connect()
     if database.db is not None:
         BOT_ID = Config.BOT_TOKEN.split(":", 1)[0]
-        config_file = Config.get_all()
-        old_config = await database.db.settings.deployConfig.find_one({"_id": BOT_ID})
+        settings = import_module("config")
+        config_file = {
+            key: value.strip() if isinstance(value, str) else value
+            for key, value in vars(settings).items()
+            if not key.startswith("__")
+        }
+        old_config = await database.db.settings.deployConfig.find_one(
+            {"_id": BOT_ID}, {"_id": 0}
+        )
         if old_config is None:
-            database.db.settings.deployConfig.replace_one(
+            await database.db.settings.deployConfig.replace_one(
                 {"_id": BOT_ID}, config_file, upsert=True
             )
-        else:
-            del old_config["_id"]
         if old_config and old_config != config_file:
+            LOGGER.info("Replacing existing deploy config in Database")
             await database.db.settings.deployConfig.replace_one(
                 {"_id": BOT_ID}, config_file, upsert=True
             )
@@ -103,31 +118,28 @@ async def load_settings():
                 await f.write(value)
 
         if await database.db.users.find_one():
+            for p in ["thumbnails", "tokens", "rclone"]:
+                if not await aiopath.exists(p):
+                    await makedirs(p)
             rows = database.db.users.find({})
             async for row in rows:
                 uid = row["_id"]
                 del row["_id"]
-                thumb_path = f"Thumbnails/{uid}.jpg"
+                thumb_path = f"thumbnails/{uid}.jpg"
                 rclone_config_path = f"rclone/{uid}.conf"
                 token_path = f"tokens/{uid}.pickle"
-                if row.get("thumb"):
-                    if not await aiopath.exists("Thumbnails"):
-                        await makedirs("Thumbnails")
+                if row.get("THUMBNAIL"):
                     async with aiopen(thumb_path, "wb+") as f:
-                        await f.write(row["thumb"])
-                    row["thumb"] = thumb_path
-                if row.get("rclone_config"):
-                    if not await aiopath.exists("rclone"):
-                        await makedirs("rclone")
+                        await f.write(row["THUMBNAIL"])
+                    row["THUMBNAIL"] = thumb_path
+                if row.get("RCLONE_CONFIG"):
                     async with aiopen(rclone_config_path, "wb+") as f:
-                        await f.write(row["rclone_config"])
-                    row["rclone_config"] = rclone_config_path
-                if row.get("token_pickle"):
-                    if not await aiopath.exists("tokens"):
-                        await makedirs("tokens")
+                        await f.write(row["RCLONE_CONFIG"])
+                    row["RCLONE_CONFIG"] = rclone_config_path
+                if row.get("TOKEN_PICKLE"):
                     async with aiopen(token_path, "wb+") as f:
-                        await f.write(row["token_pickle"])
-                    row["token_pickle"] = token_path
+                        await f.write(row["TOKEN_PICKLE"])
+                    row["TOKEN_PICKLE"] = token_path
                 user_data[uid] = row
             LOGGER.info("Users data has been imported from Database")
 
@@ -169,7 +181,7 @@ async def update_variables():
     ):
         Config.LEECH_SPLIT_SIZE = TgClient.MAX_SPLIT_SIZE
 
-    Config.MIXED_LEECH = bool(Config.MIXED_LEECH and TgClient.IS_PREMIUM_USER)
+    Config.HYBRID_LEECH = bool(Config.HYBRID_LEECH and TgClient.IS_PREMIUM_USER)
     Config.USER_TRANSMISSION = bool(
         Config.USER_TRANSMISSION and TgClient.IS_PREMIUM_USER
     )
@@ -181,20 +193,20 @@ async def update_variables():
             chat_id = int(chat_id.strip())
             if thread_ids:
                 thread_ids = list(map(lambda x: int(x.strip()), thread_ids))
-                user_data[chat_id] = {"is_auth": True, "thread_ids": thread_ids}
+                auth_chats[chat_id] = thread_ids
             else:
-                user_data[chat_id] = {"is_auth": True}
+                auth_chats[chat_id] = []
 
     if Config.SUDO_USERS:
         aid = Config.SUDO_USERS.split()
         for id_ in aid:
-            user_data[int(id_.strip())] = {"is_sudo": True}
+            sudo_users.append(int(id_.strip()))
 
-    if Config.EXTENSION_FILTER:
-        fx = Config.EXTENSION_FILTER.split()
+    if Config.EXCLUDED_EXTENSIONS:
+        fx = Config.EXCLUDED_EXTENSIONS.split()
         for x in fx:
             x = x.lstrip(".")
-            extension_filter.append(x.strip().lower())
+            excluded_extensions.append(x.strip().lower())
 
     if Config.GDRIVE_ID:
         drives_names.append("Main")
@@ -203,9 +215,9 @@ async def update_variables():
 
     if await aiopath.exists("list_drives.txt"):
         async with aiopen("list_drives.txt", "r+") as f:
-            lines = f.readlines()
+            lines = await f.readlines()
             for line in lines:
-                temp = line.strip().split()
+                temp = line.split()
                 drives_ids.append(temp[1])
                 drives_names.append(temp[0].replace("_", " "))
                 if len(temp) > 2:
@@ -228,7 +240,7 @@ async def load_configurations():
 
     if Config.BASE_URL:
         await create_subprocess_shell(
-            f"gunicorn web.wserver:app --bind 0.0.0.0:{Config.BASE_URL_PORT} --worker-class gevent"
+            f"gunicorn -k uvicorn.workers.UvicornWorker -w 1 web.wserver:app --bind 0.0.0.0:{Config.BASE_URL_PORT}"
         )
 
     if await aiopath.exists("cfg.zip"):
@@ -237,7 +249,6 @@ async def load_configurations():
         await (
             await create_subprocess_exec("7z", "x", "cfg.zip", "-o/JDownloader")
         ).wait()
-        await remove("cfg.zip")
 
     if await aiopath.exists("accounts.zip"):
         if await aiopath.exists("accounts"):

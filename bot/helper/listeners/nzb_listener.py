@@ -5,7 +5,6 @@ from ... import (
     sabnzbd_client,
     nzb_jobs,
     nzb_listener_lock,
-    task_dict_lock,
     LOGGER,
 )
 from ..ext_utils.bot_utils import new_task
@@ -33,13 +32,6 @@ async def _on_download_error(err, nzo_id, button=None):
             task.listener.on_download_error(err, button),
             _remove_job(nzo_id, task.listener.mid),
         )
-
-
-@new_task
-async def _change_status(nzo_id, status):
-    if task := await get_task_by_gid(nzo_id):
-        async with task_dict_lock:
-            task.cstatus = status
 
 
 @new_task
@@ -82,16 +74,6 @@ async def _nzb_listener():
                             nzb_jobs[nzo_id]["status"] = "Completed"
                     elif job["status"] == "Failed":
                         await _on_download_error(job["fail_message"], nzo_id)
-                    elif job["status"] in [
-                        "QuickCheck",
-                        "Verifying",
-                        "Repairing",
-                        "Fetching",
-                        "Moving",
-                        "Extracting",
-                    ]:
-                        if job["status"] != nzb_jobs[nzo_id]["status"]:
-                            await _change_status(nzo_id, job["status"])
                 for dl in downloads:
                     nzo_id = dl["nzo_id"]
                     if nzo_id not in nzb_jobs:

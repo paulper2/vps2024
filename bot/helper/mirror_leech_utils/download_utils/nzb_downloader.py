@@ -12,13 +12,19 @@ from ....core.config_manager import Config
 from ...ext_utils.task_manager import check_running_tasks
 from ...listeners.nzb_listener import on_download_start
 from ...ext_utils.db_handler import database
+from ...ext_utils.bot_utils import bt_selection_buttons
 from ...mirror_leech_utils.status_utils.nzb_status import SabnzbdStatus
-from ...telegram_helper.message_utils import send_status_message
+from ...telegram_helper.message_utils import (
+    send_status_message,
+    send_message,
+    delete_message,
+)
 
 
 async def add_servers():
     res = await sabnzbd_client.check_login()
     if res and (servers := res["servers"]):
+        sabnzbd_client.LOGGED_IN = True
         tasks = []
         servers_hosts = [x["host"] for x in servers]
         for server in list(Config.USENET_SERVERS):
@@ -43,6 +49,7 @@ async def add_servers():
         )
         or not Config.USENET_SERVERS
     ):
+        sabnzbd_client.LOGGED_IN = False
         raise NotLoggedIn("Set USENET_SERVERS in bsetting or config!")
     else:
         if tasks := [
@@ -50,7 +57,10 @@ async def add_servers():
         ]:
             try:
                 await gather(*tasks)
+                sabnzbd_client.LOGGED_IN = True
             except LoginFailed as e:
+                if len(tasks) == 1:
+                    sabnzbd_client.LOGGED_IN = False
                 raise e
 
 
@@ -115,7 +125,28 @@ async def add_nzb(listener, path):
 
         await listener.on_download_start()
 
-        if listener.multi <= 1:
+        if Config.BASE_URL and listener.select:
+            if url and name.startswith("Trying"):
+                metamsg = "Fetching URL, wait then you can select files. Use nzb file to avoid this wait."
+                meta = await send_message(listener.message, metamsg)
+                while True:
+                    nzb_info = await sabnzbd_client.get_downloads(nzo_ids=job_id)
+                    if nzb_info["queue"]["slots"]:
+                        if not nzb_info["queue"]["slots"][0]["filename"].startswith(
+                            "Trying"
+                        ):
+                            await delete_message(meta)
+                            break
+                    else:
+                        await delete_message(meta)
+                        return
+                    await sleep(1)
+            if not add_to_queue:
+                await sabnzbd_client.pause_job(job_id)
+            SBUTTONS = bt_selection_buttons(job_id)
+            msg = "Your download paused. Choose files then press Done Selecting button to start downloading."
+            await send_message(listener.message, msg, SBUTTONS)
+        elif listener.multi <= 1:
             await send_status_message(listener.message)
 
         if add_to_queue:

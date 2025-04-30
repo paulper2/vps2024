@@ -5,7 +5,7 @@ from asyncio import gather, create_subprocess_exec
 from os import execl as osexecl
 
 from .. import intervals, scheduler, sabnzbd_client, LOGGER
-from ..helper.ext_utils.bot_utils import new_task, sync_to_async
+from ..helper.ext_utils.bot_utils import new_task
 from ..helper.telegram_helper.message_utils import (
     send_message,
     delete_message,
@@ -15,6 +15,8 @@ from ..helper.ext_utils.files_utils import clean_all
 from ..helper.telegram_helper import button_build
 from ..core.mltb_client import TgClient
 from ..core.config_manager import Config
+from ..core.jdownloader_booter import jdownloader
+from ..core.torrent_manager import TorrentManager
 
 
 @new_task
@@ -112,18 +114,32 @@ async def confirm_restart(_, query):
         if st := intervals["status"]:
             for intvl in list(st.values()):
                 intvl.cancel()
-        await sync_to_async(clean_all)
+        await clean_all()
+        await TorrentManager.close_all()
         if sabnzbd_client.LOGGED_IN:
             await gather(
                 sabnzbd_client.pause_all(),
+                sabnzbd_client.delete_job("all", True),
                 sabnzbd_client.purge_all(True),
                 sabnzbd_client.delete_history("all", delete_files=True),
             )
+            await sabnzbd_client.close()
+        if jdownloader.is_connected:
+            await gather(
+                jdownloader.device.downloadcontroller.stop_downloads(),
+                jdownloader.device.linkgrabber.clear_list(),
+                jdownloader.device.downloads.cleanup(
+                    "DELETE_ALL",
+                    "REMOVE_LINKS_AND_DELETE_FILES",
+                    "ALL",
+                ),
+            )
+            await jdownloader.close()
         proc1 = await create_subprocess_exec(
             "pkill",
             "-9",
             "-f",
-            "gunicorn|aria2c|qbittorrent-nox|ffmpeg|rclone|java|sabnzbdplus|7z",
+            "gunicorn|aria2c|qbittorrent-nox|ffmpeg|rclone|java|sabnzbdplus|7z|split",
         )
         proc2 = await create_subprocess_exec("python3", "update.py")
         await gather(proc1.wait(), proc2.wait())
@@ -132,4 +148,3 @@ async def confirm_restart(_, query):
         osexecl(executable, executable, "-m", "bot")
     else:
         await delete_message(message)
-

@@ -63,6 +63,8 @@ class YoutubeDLHelper:
             "overwrites": True,
             "writethumbnail": True,
             "trim_file_name": 220,
+            "fragment_retries": 10,
+            "retries": 10,
             "retry_sleep_functions": {
                 "http": lambda n: 3,
                 "fragment": lambda n: 3,
@@ -98,18 +100,18 @@ class YoutubeDLHelper:
             if self.is_playlist:
                 self._last_downloaded = 0
         elif d["status"] == "downloading":
-            self._download_speed = d["speed"]
+            self._download_speed = d["speed"] or 0
             if self.is_playlist:
-                downloadedBytes = d["downloaded_bytes"]
+                downloadedBytes = d["downloaded_bytes"] or 0
                 chunk_size = downloadedBytes - self._last_downloaded
                 self._last_downloaded = downloadedBytes
                 self._downloaded_bytes += chunk_size
             else:
                 if d.get("total_bytes"):
-                    self._listener.size = d["total_bytes"]
+                    self._listener.size = d["total_bytes"] or 0
                 elif d.get("total_bytes_estimate"):
-                    self._listener.size = d["total_bytes_estimate"]
-                self._downloaded_bytes = d["downloaded_bytes"]
+                    self._listener.size = d["total_bytes_estimate"] or 0
+                self._downloaded_bytes = d["downloaded_bytes"] or 0
                 self._eta = d.get("eta", "-") or "-"
             try:
                 self._progress = (self._downloaded_bytes / self._listener.size) * 100
@@ -143,9 +145,9 @@ class YoutubeDLHelper:
                     if not entry:
                         continue
                     elif "filesize_approx" in entry:
-                        self._listener.size += entry.get("filesize_approx", 0)
+                        self._listener.size += entry.get("filesize_approx", 0) or 0
                     elif "filesize" in entry:
-                        self._listener.size += entry.get("filesize", 0)
+                        self._listener.size += entry.get("filesize", 0) or 0
                     if not self._listener.name:
                         outtmpl_ = "%(series,playlist_title,channel)s%(season_number& |)s%(season_number&S|)s%(season_number|)02d.%(ext)s"
                         self._listener.name, ext = ospath.splitext(
@@ -184,6 +186,7 @@ class YoutubeDLHelper:
             async_to_sync(self._listener.on_download_complete)
         except:
             pass
+        return
 
     async def add_download(self, path, qual, playlist, options):
         if playlist:
@@ -337,21 +340,7 @@ class YoutubeDLHelper:
         await self._listener.on_download_error("Stopped by User!")
 
     def _set_options(self, options):
-        options = options.split("|")
-        for opt in options:
-            key, value = map(str.strip, opt.split(":", 1))
-            if value.startswith("^"):
-                if "." in value or value == "^inf":
-                    value = float(value.split("^", 1)[1])
-                else:
-                    value = int(value.split("^", 1)[1])
-            elif value.lower() == "true":
-                value = True
-            elif value.lower() == "false":
-                value = False
-            elif value.startswith(("{", "[", "(")) and value.endswith(("}", "]", ")")):
-                value = eval(value)
-
+        for key, value in options.items():
             if key == "postprocessors":
                 if isinstance(value, list):
                     self.opts[key].extend(tuple(value))

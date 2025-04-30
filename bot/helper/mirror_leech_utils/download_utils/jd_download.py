@@ -13,11 +13,11 @@ from .... import (
     task_dict,
     task_dict_lock,
     LOGGER,
-    jd_lock,
+    jd_listener_lock,
     jd_downloads,
 )
 from ...ext_utils.bot_utils import new_task
-from ...ext_utils.jdownloader_booter import jdownloader
+from ....core.jdownloader_booter import jdownloader
 from ...ext_utils.task_manager import check_running_tasks, stop_duplicate_check
 from ...listeners.jdownloader_listener import on_download_start
 from ...mirror_leech_utils.status_utils.jdownloader_status import JDownloaderStatus
@@ -46,7 +46,7 @@ async def configureDownload(_, query, obj):
 
 class JDownloaderHelper:
     def __init__(self, listener):
-        self._timeout = 300
+        self._timeout = 600
         self._reply_to = ""
         self.listener = listener
         self.event = Event()
@@ -74,7 +74,7 @@ class JDownloaderHelper:
         buttons.data_button("Done Selecting", "jdq sdone")
         buttons.data_button("Cancel", "jdq cancel")
         button = buttons.build_menu(2)
-        msg = f"Disable/Remove the unwanted files or change variants or edit files names from myJdownloader site for <b>{self.listener.name}</b> but don't start it manually!\n\nAfter finish press Done Selecting!\nTimeout: 300s"
+        msg = f"Remove the unwanted files or change variants or edit files names from myJdownloader site for <b>{self.listener.name}</b>.\nDon't start it manually!\n\nAfter finish press Done Selecting!\nTimeout: 10 min"
         self._reply_to = await send_message(self.listener.message, msg, button)
         await self._event_handler()
         if not self.listener.is_cancelled:
@@ -115,7 +115,8 @@ async def get_jd_download_directory():
 
 async def add_jd_download(listener, path):
     try:
-        async with jd_lock:
+        async with jd_listener_lock:
+            gid = token_urlsafe(12)
             if not jdownloader.is_connected:
                 raise MYJDException(jdownloader.error)
 
@@ -137,7 +138,6 @@ async def add_jd_download(listener, path):
                         package_ids=odl_list
                     )
 
-            gid = token_urlsafe(12)
             jd_downloads[gid] = {"status": "collect", "path": path}
 
             if await aiopath.exists(listener.link):
@@ -145,7 +145,7 @@ async def add_jd_download(listener, path):
                     content = await dlc.read()
                 content = b64encode(content)
                 await jdownloader.device.linkgrabber.add_container(
-                    "DLC", f";base64,{content.decode()}"
+                    "DLC", f"data:;base64,{content.decode()}"
                 )
             else:
                 await jdownloader.device.linkgrabber.add_links(
@@ -167,7 +167,7 @@ async def add_jd_download(listener, path):
             remove_unknown = False
             name = ""
             error = ""
-            while (time() - start_time) < 60:
+            while (time() - start_time) < 90:
                 queued_downloads = await jdownloader.device.linkgrabber.query_packages(
                     [
                         {
@@ -219,7 +219,7 @@ async def add_jd_download(listener, path):
 
                 if online_packages:
                     if listener.join and len(online_packages) > 1:
-                        listener.name = listener.folder_name
+                        listener.name = "Joined Packages"
                         await jdownloader.device.linkgrabber.move_to_new_package(
                             listener.name,
                             f"{path}/{listener.name}",
@@ -265,7 +265,7 @@ async def add_jd_download(listener, path):
                 package_ids=online_packages
             )
             await listener.on_download_error(msg, button)
-            async with jd_lock:
+            async with jd_listener_lock:
                 del jd_downloads[gid]
             return
 
@@ -275,7 +275,7 @@ async def add_jd_download(listener, path):
                     package_ids=online_packages
                 )
                 await listener.remove_from_same_dir()
-                async with jd_lock:
+                async with jd_listener_lock:
                     del jd_downloads[gid]
                 return
             else:
@@ -284,7 +284,7 @@ async def add_jd_download(listener, path):
                     raise MYJDException(
                         "Select: This Download have been removed manually!"
                     )
-                async with jd_lock:
+                async with jd_listener_lock:
                     jd_downloads[gid]["ids"] = online_packages
 
         add_to_queue, event = await check_running_tasks(listener)
@@ -302,7 +302,7 @@ async def add_jd_download(listener, path):
             online_packages = await get_online_packages(path)
             if not online_packages:
                 raise MYJDException("Queue: This Download have been removed manually!")
-            async with jd_lock:
+            async with jd_listener_lock:
                 jd_downloads[gid]["ids"] = online_packages
 
         await jdownloader.device.linkgrabber.move_to_downloadlist(
@@ -328,7 +328,7 @@ async def add_jd_download(listener, path):
                 "Download List: This Download have been removed manually!"
             )
 
-        async with jd_lock:
+        async with jd_listener_lock:
             jd_downloads[gid]["status"] = "down"
             jd_downloads[gid]["ids"] = online_packages
 
@@ -348,8 +348,10 @@ async def add_jd_download(listener, path):
                 await send_status_message(listener.message)
     except (Exception, MYJDException) as e:
         await listener.on_download_error(f"{e}".strip())
-        async with jd_lock:
-            del jd_downloads[gid]
+        async with jd_listener_lock:
+            if gid in jd_downloads:
+                del jd_downloads[gid]
+        return
     finally:
         if await aiopath.exists(listener.link):
             await remove(listener.link)
