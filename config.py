@@ -4,8 +4,8 @@ OWNER_ID = 1161248917
 TELEGRAM_API = 1208757
 TELEGRAM_HASH = "333f364ed62a7cbf57aa0cf4f507823b"
 # OPTIONAL CONFIG
+TG_PROXY = {}
 USER_SESSION_STRING = ""
-DOWNLOAD_DIR = "/usr/src/app/downloads/"
 CMD_SUFFIX = ""
 AUTHORIZED_CHATS = ""
 SUDO_USERS = ""
@@ -15,12 +15,13 @@ DEFAULT_UPLOAD = "rc"
 STATUS_UPDATE_INTERVAL = 15
 FILELION_API = ""
 STREAMWISH_API = ""
-EXTENSION_FILTER = ""
+EXCLUDED_EXTENSIONS = ""  # previously EXTENSION_FILTER
 INCOMPLETE_TASK_NOTIFIER = True
 YT_DLP_OPTIONS = ""
 USE_SERVICE_ACCOUNTS = False
 NAME_SUBSTITUTE = ""
 FFMPEG_CMDS = {}
+UPLOAD_PATHS = {}
 # GDrive Tools
 GDRIVE_ID = ""
 IS_TEAM_DRIVE = False
@@ -37,36 +38,20 @@ RCLONE_SERVE_PASS = ""
 JD_EMAIL = "paulperry2233@gmail.com"
 JD_PASS = "GYwRllcuErwabXh"
 # Sabnzbd
-USENET_SERVERS = [
-    {
-        "name": "main",
-        "host": "",
-        "port": 563,
-        "timeout": 60,
-        "username": "",
-        "password": "",
-        "connections": 8,
-        "ssl": 1,
-        "ssl_verify": 2,
-        "ssl_ciphers": "",
-        "enable": 1,
-        "required": 0,
-        "optional": 0,
-        "retention": 0,
-        "send_group": 0,
-        "priority": 0,
-    }
-]
+USENET_SERVERS = []
+# Nzb search
+HYDRA_IP = ""
+HYDRA_API_KEY = ""
 # Update
 UPSTREAM_REPO = ""
-UPSTREAM_BRANCH = ""
+UPSTREAM_BRANCH = "master"
 # Leech
 LEECH_SPLIT_SIZE = 0
 AS_DOCUMENT = False
 EQUAL_SPLITS = False
 MEDIA_GROUP = False
 USER_TRANSMISSION = False
-MIXED_LEECH = False
+HYBRID_LEECH = False  # previously MIXED_LEECH
 LEECH_FILENAME_PREFIX = ""
 LEECH_DUMP_CHAT = ""
 THUMBNAIL_LAYOUT = ""
@@ -82,6 +67,7 @@ QUEUE_UPLOAD = 0
 # RSS
 RSS_DELAY = 600
 RSS_CHAT = ""
+RSS_SIZE_LIMIT = 0
 # Torrent Search
 SEARCH_API_LINK = ""
 SEARCH_LIMIT = 0
