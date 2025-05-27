@@ -13,12 +13,14 @@ async def authorize(_, message):
             chat_id, thread_id = list(map(int, msg[1].split("|")))
         else:
             chat_id = int(msg[1].strip())
-    elif reply_to := message.reply_to_message:
+    elif (
+        reply_to := message.reply_to_message
+    ) and reply_to.id != message.message_thread_id:
         chat_id = (
             reply_to.from_user.id if reply_to.from_user else reply_to.sender_chat.id
         )
     else:
-        if message.is_topic_message:
+        if message.topic_message:
             thread_id = message.message_thread_id
         chat_id = message.chat.id
     if chat_id in user_data and user_data[chat_id].get("AUTH"):
@@ -52,12 +54,14 @@ async def unauthorize(_, message):
             chat_id, thread_id = list(map(int, msg[1].split("|")))
         else:
             chat_id = int(msg[1].strip())
-    elif reply_to := message.reply_to_message:
+    elif (
+        reply_to := message.reply_to_message
+    ) and reply_to.id != message.message_thread_id:
         chat_id = (
             reply_to.from_user.id if reply_to.from_user else reply_to.sender_chat.id
         )
     else:
-        if message.is_topic_message:
+        if message.topic_message:
             thread_id = message.message_thread_id
         chat_id = message.chat.id
     if chat_id in user_data and user_data[chat_id].get("AUTH"):
