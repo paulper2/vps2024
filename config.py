@@ -28,7 +28,7 @@ IS_TEAM_DRIVE = False
 STOP_DUPLICATE = False
 INDEX_URL = ""
 # Rclone
-RCLONE_PATH = "lidia:Downloads"
+RCLONE_PATH = "jhonson:Downloads"
 RCLONE_FLAGS = ""
 RCLONE_SERVE_URL = ""
 RCLONE_SERVE_PORT = 0
