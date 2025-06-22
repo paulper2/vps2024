@@ -23,7 +23,6 @@ user_agent = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"
 )
 
-
 def direct_link_generator(link):
     """direct links generator"""
     domain = urlparse(link).hostname
@@ -37,8 +36,12 @@ def direct_link_generator(link):
         return devuploads(link)
     elif "lulacloud.com" in domain:
         return lulacloud(link)
+    elif "uploadhaven" in domain:
+        return uploadhaven(link)
     elif "fuckingfast.co" in domain:
         return fuckingfast_dl(link)
+    elif "mediafile.cc" in domain:
+        return mediafile(link)
     elif "mediafire.com" in domain:
         return mediafire(link)
     elif "osdn.net" in domain:
@@ -148,6 +151,7 @@ def direct_link_generator(link):
             "1024terabox.com",
             "teraboxshare.com",
             "terafileshare.com",
+            "terabox.club",
         ]
     ):
         return terabox(link)
@@ -182,9 +186,7 @@ def direct_link_generator(link):
     ):
         return linkBox(link)
     elif is_share_link(link):
-        if "gdtot" in domain:
-            return gdtot(link)
-        elif "filepress" in domain:
+        if "filepress" in domain:
             return filepress(link)
         else:
             return sharer_scraper(link)
@@ -234,31 +236,59 @@ def buzzheavier(url):
     @param link: URL from buzzheavier
     @return: Direct download link
     """
-    if "/download" not in url:
-        url += "/download"
-
-    # Normalize URL
-    url = url.strip()
-    headers = {
-        "referer": url.split("/download")[0],
-        "hx-current-url": url.split("/download")[0],
-        "hx-request": "true",
-        "priority": "u=1, i",
-    }
-
-    try:
-        response = get(url, headers=headers)
-        d_url = response.headers.get("Hx-Redirect")
-
-        if not d_url:
-            raise DirectDownloadLinkException("ERROR: Failed to fetch direct link.")
-        if d_url.startswith("http://") or d_url.startswith("https://"):
+    pattern = r'^https?://buzzheavier\.com/[a-zA-Z0-9]+$'
+    if not match(pattern, url):
+        return url
+    def _bhscraper(url, folder=False):
+        session = Session()
+        if "/download" not in url:
+            url += "/download"
+        url = url.strip()
+        session.headers.update(
+            {
+                "referer": url.split("/download")[0],
+                "hx-current-url": url.split("/download")[0],
+                "hx-request": "true",
+                "priority": "u=1, i",
+            }
+        )
+        try:
+            response = session.get(url)
+            d_url = response.headers.get("Hx-Redirect")
+            if not d_url:
+                if not folder:
+                    raise DirectDownloadLinkException(f"ERROR: Gagal mendapatkan data")
+                return
             return d_url
+        except Exception as e:
+            raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
+        
+    with Session() as session:
+        tree = HTML(session.get(url).text)
+        if link := tree.xpath("//a[contains(@class, 'link-button') and contains(@class, 'gay-button')]/@hx-get"):
+            return _bhscraper("https://buzzheavier.com" + link[0])
+        elif folders := tree.xpath("//tbody[@id='tbody']/tr"):
+            details = {"contents": [], "title": "", "total_size": 0}
+            for data in folders:
+                try:
+                    filename = data.xpath(".//a")[0].text.strip()
+                    _id = data.xpath(".//a")[0].attrib.get("href", "").strip()
+                    size = data.xpath(".//td[@class='text-center']/text()")[0].strip()
+                    url = _bhscraper(f"https://buzzheavier.com{_id}", True)
+                    item = {
+                        "path": "",
+                        "filename": filename,
+                        "url": url,
+                        }            
+                    details["contents"].append(item) 
+                    size = speed_string_to_bytes(size)
+                    details["total_size"] += size
+                except:
+                    continue
+            details["title"] = tree.xpath("//span/text()")[0].strip()
+            return details
         else:
-            parsed_url = urlparse(url)
-            return f"{parsed_url.scheme}://{parsed_url.netloc}{d_url}"
-    except Exception as e:
-        raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
+            raise DirectDownloadLinkException("ERROR: No download link found")
 
 
 def fuckingfast_dl(url):
@@ -347,6 +377,51 @@ def devuploads(url):
         direct_link = html.xpath("//input[@name='orilink']/@value")
         return direct_link[0]
 
+def uploadhaven(url):
+    """
+    Generate a direct download link for uploadhaven.com URLs.
+    @param url: URL from uploadhaven.com
+    @return: Direct download link
+    """
+    try:
+        res = get(url,headers={'Referer':'http://steamunlocked.net/'})
+        html = HTML(res.text)
+        if not html.xpath('//form[@method="POST"]//input'):
+            raise DirectDownloadLinkException("ERROR: Unable to find link data")        
+        data = {i.get("name"): i.get("value") for i in html.xpath('//form[@method="POST"]//input')}
+        sleep(15)
+        res = post(url, data=data, headers={'Referer': url}, cookies=res.cookies)
+        html = HTML(res.text)
+        if not html.xpath('//div[@class="alert alert-success mb-0"]//a'):
+            raise DirectDownloadLinkException("ERROR: Unable to find link data")
+        a = html.xpath('//div[@class="alert alert-success mb-0"]//a')[0]
+        return a.get('href')
+    except Exception as e:
+        raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
+
+def mediafile(url):
+    """
+    Generate a direct download link for mediafile.cc URLs.
+    @param url: URL from mediafile.cc
+    @return: Direct download link
+    """
+    try:
+        res = get(url, allow_redirects=True)
+        match = search(r"href='([^']+)'", res.text)
+        if not match:
+            raise DirectDownloadLinkException("ERROR: Unable to find link data")        
+        download_url = match.group(1)
+        sleep(60)
+        res = get(download_url, headers={'Referer': url}, cookies=res.cookies)
+        postvalue = search(r'showFileInformation(.*);', res.text)
+        if not postvalue:
+            raise DirectDownloadLinkException("ERROR: Unable to find post value")       
+        postid = postvalue.group(1).replace('(','').replace(')','')
+        response = post('https://mediafile.cc/account/ajax/file_details',data={"u": postid}, headers={"X-Requested-With": "XMLHttpRequest"})
+        html = response.json()['html']
+        return [i for i in findall(r'https://[^\s"\']+', html) if 'download_token' in i][1]
+    except Exception as e:
+        raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
 
 def mediafire(url, session=None):
     if "/folder/" in url:
@@ -688,85 +763,65 @@ def uploadee(url):
 
 
 def terabox(url):
+    if "/file/" in url:
+        return url
+    api_url = f"https://wdzone-terabox-api.vercel.app/api?url={quote(url)}"
     try:
-        encoded_url = quote(url)
-        return f"https://teradlrobot.cheemsbackup.workers.dev/?url={encoded_url}"
+        with Session() as session:
+            req = session.get(api_url, headers={"User-Agent": user_agent}).json()
     except Exception as e:
-        raise DirectDownloadLinkException("Failed to bypass Terabox URL") from e
+        raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
+
+    details = {"contents": [], "title": "", "total_size": 0}
+    if "✅ Status" in req:
+        for data in req["📜 Extracted Info"]:
+            item = {
+                "path": "",
+                "filename": data["📂 Title"],
+                "url": data["🔽 Direct Download Link"],
+                }       
+            details["contents"].append(item)
+            size = (data["📏 Size"]).replace(" ", "")
+            size = speed_string_to_bytes(size)
+            details["total_size"] += size
+        details["title"] = req["📜 Extracted Info"][0]["📂 Title"]
+        if len(details["contents"]) == 1:
+            return details["contents"][0]["url"]
+        return details
+    else:
+        raise DirectDownloadLinkException("ERROR: File not found!")
 
 
 def filepress(url):
-    with create_scraper() as session:
-        try:
-            url = session.get(url).url
-            raw = urlparse(url)
-            json_data = {
-                "id": raw.path.split("/")[-1],
-                "method": "publicDownlaod",
-            }
-            api = f"{raw.scheme}://{raw.hostname}/api/file/downlaod/"
-            res2 = session.post(
-                api,
-                headers={"Referer": f"{raw.scheme}://{raw.hostname}"},
-                json=json_data,
-            ).json()
-            json_data2 = {
-                "id": res2["data"],
-                "method": "publicUserDownlaod",
-            }
-            api2 = "https://new2.filepress.store/api/file/downlaod2/"
-            res = session.post(
-                api2,
-                headers={"Referer": f"{raw.scheme}://{raw.hostname}"},
-                json=json_data2,
-            ).json()
-        except Exception as e:
-            raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
+    try:
+        url = get(f"https://filebee.xyz/file/{url.split('/')[-1]}").url        
+        raw = urlparse(url)
+        json_data = {
+            "id": raw.path.split("/")[-1],
+            "method": "publicDownlaod",
+        }
+        api = f"{raw.scheme}://{raw.hostname}/api/file/downlaod/"
+        res2 = post(
+            api,
+            headers={"Referer": f"{raw.scheme}://{raw.hostname}"},
+            json=json_data,
+        ).json()
+        json_data2 = {
+            "id": res2["data"],
+            "method": "publicDownlaod",
+        }
+        api2 = f"{raw.scheme}://{raw.hostname}/api/file/downlaod2/"
+        res = post(
+            api2,
+            headers={"Referer": f"{raw.scheme}://{raw.hostname}"},
+            json=json_data2,
+        ).json()
+    except Exception as e:
+        raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
+
     if "data" not in res:
         raise DirectDownloadLinkException(f'ERROR: {res["statusText"]}')
     return f'https://drive.google.com/uc?id={res["data"]}&export=download'
-
-
-def gdtot(url):
-    cget = create_scraper().request
-    try:
-        res = cget("GET", f'https://gdtot.pro/file/{url.split("/")[-1]}')
-    except Exception as e:
-        raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
-    token_url = HTML(res.text).xpath(
-        "//a[contains(@class,'inline-flex items-center justify-center')]/@href"
-    )
-    if not token_url:
-        try:
-            url = cget("GET", url).url
-            p_url = urlparse(url)
-            res = cget(
-                "GET", f"{p_url.scheme}://{p_url.hostname}/ddl/{url.split('/')[-1]}"
-            )
-        except Exception as e:
-            raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
-        if (
-            drive_link := findall(r"myDl\('(.*?)'\)", res.text)
-        ) and "drive.google.com" in drive_link[0]:
-            return drive_link[0]
-        else:
-            raise DirectDownloadLinkException(
-                "ERROR: Drive Link not found, Try in your broswer"
-            )
-    token_url = token_url[0]
-    try:
-        token_page = cget("GET", token_url)
-    except Exception as e:
-        raise DirectDownloadLinkException(
-            f"ERROR: {e.__class__.__name__} with {token_url}"
-        ) from e
-    path = findall(r'\("(.*?)"\)', token_page.text)
-    if not path:
-        raise DirectDownloadLinkException("ERROR: Cannot bypass this")
-    path = path[0]
-    raw = urlparse(token_url)
-    final_url = f"{raw.scheme}://{raw.hostname}{path}"
-    return sharer_scraper(final_url)
 
 
 def sharer_scraper(url):
