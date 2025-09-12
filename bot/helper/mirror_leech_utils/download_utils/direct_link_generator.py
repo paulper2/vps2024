@@ -188,10 +188,7 @@ def direct_link_generator(link):
     ):
         return linkBox(link)
     elif is_share_link(link):
-        if "filepress" in domain:
-            return filepress(link)
-        else:
-            return sharer_scraper(link)
+        return filepress(link) if "filepress" in domain else sharer_scraper(link)
     elif any(
         x in domain
         for x in [
@@ -260,7 +257,7 @@ def buzzheavier(url):
             d_url = response.headers.get("Hx-Redirect")
             if not d_url:
                 if not folder:
-                    raise DirectDownloadLinkException(f"ERROR: Gagal mendapatkan data")
+                    raise DirectDownloadLinkException("ERROR: Gagal mendapatkan data")
                 return
             return d_url
         except Exception as e:
@@ -271,7 +268,7 @@ def buzzheavier(url):
         if link := tree.xpath(
             "//a[contains(@class, 'link-button') and contains(@class, 'gay-button')]/@hx-get"
         ):
-            return _bhscraper("https://buzzheavier.com" + link[0])
+            return _bhscraper(f"https://buzzheavier.com{link[0]}")
         elif folders := tree.xpath("//tbody[@id='tbody']/tr"):
             details = {"contents": [], "title": "", "total_size": 0}
             for data in folders:
@@ -308,15 +305,12 @@ def fuckingfast_dl(url):
         response = get(url)
         content = response.text
         pattern = r'window\.open\((["\'])(https://fuckingfast\.co/dl/[^"\']+)\1'
-        match = search(pattern, content)
-
-        if not match:
+        if match := search(pattern, content):
+            return match.group(2)
+        else:
             raise DirectDownloadLinkException(
                 "ERROR: Could not find download link in page"
             )
-
-        direct_url = match.group(2)
-        return direct_url
 
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
@@ -420,13 +414,13 @@ def mediafile(url):
         match = search(r"href='([^']+)'", res.text)
         if not match:
             raise DirectDownloadLinkException("ERROR: Unable to find link data")
-        download_url = match.group(1)
+        download_url = match[1]
         sleep(60)
         res = get(download_url, headers={"Referer": url}, cookies=res.cookies)
         postvalue = search(r"showFileInformation(.*);", res.text)
         if not postvalue:
             raise DirectDownloadLinkException("ERROR: Unable to find post value")
-        postid = postvalue.group(1).replace("(", "").replace(")", "")
+        postid = postvalue[1].replace("(", "").replace(")", "")
         response = post(
             "https://mediafile.cc/account/ajax/file_details",
             data={"u": postid},
@@ -438,7 +432,6 @@ def mediafile(url):
         ][1]
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: {str(e)}") from e
-
 
 def mediafire(url, session=None):
     if "/folder/" in url:
@@ -452,27 +445,14 @@ def mediafire(url, session=None):
         r"https?:\/\/download\d+\.mediafire\.com\/\S+\/\S+\/\S+", url
     ):
         return final_link[0]
-    
-    def _decode_url(html, session):
-        enc_url = html.xpath('//a[@id="downloadButton"]')
-        if enc_url:
-            final_link = enc_url[0].attrib.get('href')
-            scrambled = enc_url[0].attrib.get('data-scrambled-url')
 
-            if final_link and scrambled:
-                try:
-                    final_link = b64decode(scrambled).decode("utf-8")
-                    return final_link
-                except Exception as e:
-                    raise ValueError(f"Failed to decode final link. {e.__class__.__name__}") from e
-            elif final_link.startswith("http"):
-                return final_link
-            elif final_link.startswith("//"):
-                return mediafire(f"https:{final_link}", session=session)
-            else:
-                raise ValueError(f"No download link found")
-        else:
-            raise ValueError("Download button not found in the HTML content. It may have been blocked by Cloudflare's anti-bot protection.")
+    def _repair_download(url, session):
+        try:
+            html = HTML(session.get(url).text)
+            if new_link := html.xpath('//a[@id="continue-btn"]/@href'):
+                return mediafire(f"https://mediafire.com/{new_link[0]}")
+        except Exception as e:
+            raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
 
     if session is None:
         session = create_scraper()
@@ -500,14 +480,20 @@ def mediafire(url, session=None):
         if html.xpath("//div[@class='passwordPrompt']"):
             session.close()
             raise DirectDownloadLinkException("ERROR: Wrong password.")
-    try:
-        final_link = _decode_url(html, session)
-    except Exception as e:
-        raise DirectDownloadLinkException(f"ERROR: {str(e)}")
+    if not (final_link := html.xpath('//a[@aria-label="Download file"]/@href')):
+        if repair_link := html.xpath("//a[@class='retry']/@href"):
+            return _repair_download(repair_link[0], session)
+        raise DirectDownloadLinkException(
+            "ERROR: No links found in this page Try Again"
+        )
+    if final_link[0].startswith("//"):
+        final_url = f"https://{final_link[0][2:]}"
+        if _password:
+            final_url += f"::{_password}"
+        return mediafire(final_url, session)
     session.close()
-    return final_link
-
-
+    return final_link[0]
+    
 def osdn(url):
     with create_scraper() as session:
         try:
@@ -796,23 +782,22 @@ def terabox(url):
         raise DirectDownloadLinkException(f"ERROR: {e.__class__.__name__}") from e
 
     details = {"contents": [], "title": "", "total_size": 0}
-    if "✅ Status" in req:
-        for data in req["📜 Extracted Info"]:
-            item = {
-                "path": "",
-                "filename": data["📂 Title"],
-                "url": data["🔽 Direct Download Link"],
-            }
-            details["contents"].append(item)
-            size = (data["📏 Size"]).replace(" ", "")
-            size = speed_string_to_bytes(size)
-            details["total_size"] += size
-        details["title"] = req["📜 Extracted Info"][0]["📂 Title"]
-        if len(details["contents"]) == 1:
-            return details["contents"][0]["url"]
-        return details
-    else:
+    if "✅ Status" not in req:
         raise DirectDownloadLinkException("ERROR: File not found!")
+    for data in req["📜 Extracted Info"]:
+        item = {
+            "path": "",
+            "filename": data["📂 Title"],
+            "url": data["🔽 Direct Download Link"],
+        }
+        details["contents"].append(item)
+        size = (data["📏 Size"]).replace(" ", "")
+        size = speed_string_to_bytes(size)
+        details["total_size"] += size
+    details["title"] = req["📜 Extracted Info"][0]["📂 Title"]
+    if len(details["contents"]) == 1:
+        return details["contents"][0]["url"]
+    return details
 
 
 def filepress(url):
